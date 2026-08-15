@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stock Dashboard</title>
+<style>
+  :root {
+    --bg: #0f1216;
+    --panel: #171b21;
+    --panel-2: #1f252d;
+    --border: #343b45;
+    --text: #e3e8ef;
+    --muted: #8994a3;
+    --soft: #b8c1cc;
+    --green: #31c48d;
+    --red: #f05252;
+    --blue: #6ea8fe;
+    --yellow: #f5b84b;
+    --cyan: #4fd1c5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 18px 22px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(15, 18, 22, 0.94);
+    position: sticky;
+    top: 0;
+    z-index: 4;
+  }
+  h1 { font-size: 20px; margin: 0; letter-spacing: 0; }
+  button {
+    border: 1px solid var(--border);
+    background: var(--panel-2);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  button:hover { border-color: var(--blue); }
+  button.active { background: #24364d; border-color: var(--blue); color: #dcebff; }
+  .top-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 999px;
+    padding: 6px 10px;
+    font-size: 12px;
+    color: #0b1117;
+    font-weight: 700;
+  }
+  .live { background: var(--green); }
+  .warn { background: var(--yellow); }
+  main {
+    display: grid;
+    grid-template-columns: minmax(320px, 1fr) minmax(420px, 1.25fr);
+    gap: 18px;
+    padding: 18px;
+  }
+  section {
+    min-width: 0;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .section-head h2 { margin: 0; font-size: 15px; letter-spacing: 0; }
+  .section-note { color: var(--muted); font-size: 12px; }
+  .quotes {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: 10px;
+    padding: 12px;
+  }
+  .card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #12161b;
+    padding: 12px;
+    cursor: pointer;
+    min-height: 126px;
+  }
+  .card:hover, .card.selected { border-color: var(--blue); background: #17202b; }
+  .symbol { color: var(--muted); font-size: 12px; display: flex; justify-content: space-between; gap: 8px; }
+  .name { margin-top: 5px; font-weight: 700; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .price { margin-top: 10px; font-size: 23px; font-weight: 800; }
+  .change { margin-top: 5px; font-size: 14px; font-weight: 800; }
+  .meta { margin-top: 9px; color: var(--muted); font-size: 11px; display: flex; justify-content: space-between; gap: 8px; }
+  .up { color: var(--green); }
+  .down { color: var(--red); }
+  .chart-wrap { padding: 12px 14px 16px; }
+  .chart-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+  .chart {
+    display: block;
+    width: 100%;
+    height: 360px;
+    background: #101419;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .chart-message {
+    min-height: 22px;
+    padding-top: 8px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .chart-message.error {
+    padding: 8px 0 0;
+    text-align: left;
+  }
+  .kpi-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-top: 10px;
+  }
+  .kpi {
+    background: #12161b;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    min-height: 70px;
+  }
+  .kpi span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+  .kpi strong { font-size: 18px; }
+  .lower {
+    display: grid;
+    grid-template-columns: 1.25fr 0.75fr;
+    gap: 18px;
+    padding: 0 18px 18px;
+  }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { padding: 9px 10px; text-align: right; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; background: #14191f; position: sticky; top: 0; }
+  td:first-child, th:first-child { text-align: left; }
+  .learn { padding: 14px 16px 16px; }
+  .learn-grid { display: grid; gap: 10px; }
+  .learn-item {
+    border-left: 3px solid var(--cyan);
+    padding: 9px 10px;
+    background: #12161b;
+    border-radius: 0 8px 8px 0;
+  }
+  .learn-item b { display: block; font-size: 13px; margin-bottom: 5px; }
+  .learn-item p { margin: 0; color: var(--soft); font-size: 12px; line-height: 1.55; }
+  .loading, .error { padding: 28px; color: var(--muted); text-align: center; }
+  .error { color: var(--red); }
+  footer {
+    padding: 12px 18px 20px;
+    color: var(--muted);
+    font-size: 12px;
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  @media (max-width: 960px) {
+    main, .lower { grid-template-columns: 1fr; }
+    header { align-items: flex-start; flex-direction: column; }
+    .chart { height: 300px; }
+    .kpi-row { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Stock Dashboard</h1>
+    <div class="section-note" id="market-line">正在拉取实时行情...</div>
+  </div>
+  <div class="top-actions">
+    <span id="status-badge" class="badge warn">LOADING</span>
+    <button id="refresh-btn" title="立即刷新行情和图表">刷新</button>
+  </div>
+</header>
+
+<main>
+  <section>
+    <div class="section-head">
+      <h2>实时行情</h2>
+      <span class="section-note" id="quote-time">--</span>
+    </div>
+    <div class="quotes" id="quote-grid"><div class="loading">Loading quotes...</div></div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2 id="chart-title">实时图</h2>
+      <span class="section-note" id="chart-time">--</span>
+    </div>
+    <div class="chart-wrap">
+      <div class="chart-toolbar">
+        <button data-range="intraday" class="active">分时</button>
+        <button data-range="daily">日 K</button>
+      </div>
+      <div id="price-chart" class="chart"></div>
+      <div id="chart-message" class="chart-message"></div>
+      <div class="kpi-row">
+        <div class="kpi"><span>最新价</span><strong id="kpi-price">--</strong></div>
+        <div class="kpi"><span>区间高低</span><strong id="kpi-range">--</strong></div>
+        <div class="kpi"><span>成交量</span><strong id="kpi-volume">--</strong></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="lower">
+  <section>
+    <div class="section-head">
+      <h2>技术指标快照</h2>
+      <span class="section-note" id="snapshot-time">--</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Symbol</th><th>Date</th><th>Close</th><th>Chg%</th><th>MA5</th><th>MA20</th><th>MA50</th><th>MACD</th><th>RSI6</th><th>RSI14</th><th>ATR</th>
+          </tr>
+        </thead>
+        <tbody id="indicator-body"><tr><td colspan="11" class="loading">Loading snapshot...</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head"><h2>小白知识区</h2><span class="section-note">看盘先看这些</span></div>
+    <div class="learn">
+      <div class="learn-grid">
+        <div class="learn-item"><b>实时价不是预测</b><p>它只说明当前成交/报价位置。先看时间戳，过旧的数据不能拿来判断盘中强弱。</p></div>
+        <div class="learn-item"><b>涨跌幅要和市场一起看</b><p>个股涨 2% 但指数涨 4%，实际是跑输；个股跌 1% 但行业跌 5%，可能反而强。</p></div>
+        <div class="learn-item"><b>MA 是趋势线</b><p>价格在 MA20 上方通常代表短中期偏强；跌破后要看能否快速收回，不能只看一天。</p></div>
+        <div class="learn-item"><b>RSI 看拥挤程度</b><p>RSI6 低于 30 常见于短线超卖，高于 70 常见于短线过热，但它不是买卖按钮。</p></div>
+        <div class="learn-item"><b>MACD 看动能</b><p>MACD 柱扩大说明动能增强，缩小说明动能衰减；和价格新高/新低背离时更值得警惕。</p></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<footer>
+  <span id="source-line">Source: stock-sdk</span>
+  <span>行情自动刷新 15s；图表分时 30s / 日 K 5min</span>
+</footer>
+
+<script src="/vendor/lightweight-charts.standalone.production.js"></script>
+<script>
+const quoteGrid = document.getElementById('quote-grid');
+const indicatorBody = document.getElementById('indicator-body');
+const statusBadge = document.getElementById('status-badge');
+const quoteTime = document.getElementById('quote-time');
+const snapshotTime = document.getElementById('snapshot-time');
+const marketLine = document.getElementById('market-line');
+const sourceLine = document.getElementById('source-line');
+const chartTitle = document.getElementById('chart-title');
+const chartTime = document.getElementById('chart-time');
+const state = { selected: 'sh000001', range: 'intraday', cards: [] };
+const chartEl = document.getElementById('price-chart');
+const chartMessage = document.getElementById('chart-message');
+const priceChart = LightweightCharts.createChart(chartEl, {
+  layout: { background: { color: '#101419' }, textColor: '#b8c1cc' },
+  grid: { vertLines: { color: '#202832' }, horzLines: { color: '#202832' } },
+  rightPriceScale: { borderColor: '#343b45' },
+  timeScale: { borderColor: '#343b45', timeVisible: true, secondsVisible: false },
+  crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+  autoSize: true,
+});
+let priceSeries = null;
+let maSeries = null;
+
+function resetChartSeries(kind) {
+  if (priceSeries) priceChart.removeSeries(priceSeries);
+  if (maSeries) priceChart.removeSeries(maSeries);
+  priceSeries = kind === 'candlestick'
+    ? priceChart.addSeries(LightweightCharts.CandlestickSeries, {
+        upColor: '#31c48d',
+        downColor: '#f05252',
+        borderVisible: false,
+        wickUpColor: '#31c48d',
+        wickDownColor: '#f05252',
+      })
+    : priceChart.addSeries(LightweightCharts.LineSeries, {
+        color: '#6ea8fe',
+        lineWidth: 2,
+        lastValueVisible: true,
+        priceLineVisible: true,
+      });
+  maSeries = kind === 'candlestick'
+    ? priceChart.addSeries(LightweightCharts.LineSeries, {
+        color: '#f5b84b',
+        lineWidth: 1,
+        lastValueVisible: false,
+        priceLineVisible: false,
+      })
+    : null;
+}
+
+function parseChartTime(value) {
+  if (!value) return undefined;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const ts = Date.parse(String(value).replace(' ', 'T'));
+  return Number.isFinite(ts) ? Math.floor(ts / 1000) : value;
+}
+function showChartMessage(text, isError = false) {
+  chartMessage.textContent = text || '';
+  chartMessage.className = `chart-message${isError ? ' error' : ''}`;
+}
+
+function fmtPct(v) {
+  if (v == null || !Number.isFinite(Number(v))) return '--';
+  const p = Number(v);
+  return (p >= 0 ? '+' : '') + p.toFixed(2) + '%';
+}
+function cls(v) {
+  if (v == null || !Number.isFinite(Number(v))) return '';
+  return Number(v) >= 0 ? 'up' : 'down';
+}
+function fmtNum(v, d = 2) {
+  if (v == null || !Number.isFinite(Number(v))) return '--';
+  return Number(v).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+}
+function fmtVol(v) {
+  const n = Number(v || 0);
+  if (!n) return '--';
+  if (n >= 1e8) return (n / 1e8).toFixed(2) + '亿';
+  if (n >= 1e4) return (n / 1e4).toFixed(1) + '万';
+  return String(Math.round(n));
+}
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+function quoteSymbol(q, fallback) {
+  if (fallback === 'A') return q.marketId === '51' ? `sz${q.code}` : `sh${q.code}`;
+  if (fallback === 'HK') return q.code || q.symbol;
+  if (fallback === 'US') return q.code === 'BABA' ? '106.BABA' : `105.${q.code || q.symbol}`;
+  return q.symbol || q.code;
+}
+
+function collectCards(data) {
+  return [
+    ...(data.aShares || []).map(q => ({ q, market: 'A' })),
+    ...(data.hk || []).map(q => ({ q, market: 'HK' })),
+    ...(data.us || []).map(q => ({ q, market: 'US' })),
+  ].map(({ q, market }) => ({
+    symbol: quoteSymbol(q, market),
+    displaySymbol: q.symbol || q.code,
+    name: q.name || q.symbol || q.code,
+    price: q.price ?? q.current,
+    change: q.changePercent,
+    high: q.high,
+    low: q.low,
+    volume: q.volume,
+    market,
+    time: q.time || q.date || '',
+  }));
+}
+
+function renderQuotes(data) {
+  state.cards = collectCards(data);
+  if (!state.cards.length) {
+    quoteGrid.innerHTML = '<div class="error">No quote data</div>';
+    return;
+  }
+  if (!state.cards.some(c => c.symbol === state.selected)) state.selected = state.cards[0].symbol;
+  quoteGrid.innerHTML = state.cards.map(c => `
+    <div class="card ${c.symbol === state.selected ? 'selected' : ''}" data-symbol="${esc(c.symbol)}">
+      <div class="symbol"><span>${esc(c.market)} · ${esc(c.displaySymbol)}</span><span>${esc(c.time || '--')}</span></div>
+      <div class="name">${esc(c.name)}</div>
+      <div class="price">${fmtNum(c.price)}</div>
+      <div class="change ${cls(c.change)}">${fmtPct(c.change)}</div>
+      <div class="meta"><span>H:${fmtNum(c.high)}</span><span>L:${fmtNum(c.low)}</span><span>V:${fmtVol(c.volume)}</span></div>
+    </div>
+  `).join('');
+  quoteGrid.querySelectorAll('.card').forEach(card => {
+    card.addEventListener('click', () => {
+      state.selected = card.dataset.symbol;
+      renderQuotes(data);
+      loadChart();
+    });
+  });
+
+  const staleMarkets = Object.entries(data.markets || {}).filter(([, m]) => m.stale || m.error);
+  statusBadge.textContent = staleMarkets.length ? 'PARTIAL' : 'LIVE';
+  statusBadge.className = `badge ${staleMarkets.length ? 'warn' : 'live'}`;
+  quoteTime.textContent = data.capturedAt ? new Date(data.capturedAt).toLocaleTimeString('zh-CN') : '--';
+  marketLine.textContent = Object.entries(data.markets || {})
+    .map(([m, v]) => `${m}: ${v.sourceTime || new Date(v.fetchedAt).toLocaleTimeString('zh-CN')}${v.stale ? ' stale' : ''}`)
+    .join(' | ');
+  sourceLine.textContent = staleMarkets.length
+    ? `Source: stock-sdk | 异常: ${staleMarkets.map(([m, v]) => `${m} ${v.error || 'stale'}`).join('; ')}`
+    : 'Source: stock-sdk | 分市场独立刷新';
+}
+
+function drawChart(data) {
+  const bars = data.bars || [];
+  if (bars.length < 2) {
+    showChartMessage('No chart data', true);
+    return;
+  }
+
+  showChartMessage('');
+  resetChartSeries(state.range === 'daily' ? 'candlestick' : 'line');
+  if (state.range === 'daily') {
+    priceSeries.setData(bars.map(b => ({
+      time: parseChartTime(b.time),
+      open: Number.isFinite(b.open) && b.open > 0 ? b.open : b.close,
+      high: b.high,
+      low: b.low,
+      close: b.close,
+    })));
+    maSeries.setData(bars
+      .filter(b => Number.isFinite(Number(b.ma?.ma20)))
+      .map(b => ({ time: parseChartTime(b.time), value: Number(b.ma.ma20) })));
+  } else {
+    priceSeries.setData(bars.map(b => ({
+      time: parseChartTime(b.time),
+      value: b.close,
+    })));
+  }
+  priceChart.timeScale().fitContent();
+
+  const last = bars.at(-1);
+  const hi = Math.max(...bars.map(b => b.high).filter(Number.isFinite));
+  const lo = Math.min(...bars.map(b => b.low).filter(Number.isFinite));
+  document.getElementById('kpi-price').textContent = fmtNum(last.close);
+  document.getElementById('kpi-range').textContent = `${fmtNum(lo)} - ${fmtNum(hi)}`;
+  document.getElementById('kpi-volume').textContent = fmtVol(last.volume);
+  chartTitle.textContent = `${data.label} ${state.range === 'daily' ? '日 K' : '分时'}`;
+  chartTime.textContent = `${bars.at(0).time || '--'} -> ${data.sourceTime || last.time || '--'}`;
+}
+
+function renderSnapshot(data) {
+  if (!data || !data.symbols) {
+    indicatorBody.innerHTML = '<tr><td colspan="11" class="error">No snapshot data</td></tr>';
+    return;
+  }
+  indicatorBody.innerHTML = data.symbols.map(s => {
+    const bar = s.latest || s.previous || {};
+    return `<tr>
+      <td title="${esc(s.label)}">${esc(s.symbol)}</td>
+      <td>${esc(bar.date || '--')}</td>
+      <td class="${cls(bar.changePercent)}">${fmtNum(bar.close)}</td>
+      <td class="${cls(bar.changePercent)}">${fmtPct(bar.changePercent)}</td>
+      <td>${fmtNum(bar.ma?.ma5)}</td>
+      <td>${fmtNum(bar.ma?.ma20)}</td>
+      <td>${fmtNum(bar.ma?.ma50)}</td>
+      <td class="${cls(bar.macd?.macd)}">${fmtNum(bar.macd?.macd, 4)}</td>
+      <td>${fmtNum(bar.rsi?.rsi6, 1)}</td>
+      <td>${fmtNum(bar.rsi?.rsi14, 1)}</td>
+      <td>${fmtNum(bar.atr?.atr, 4)}</td>
+    </tr>`;
+  }).join('');
+  snapshotTime.textContent = data.capturedAt ? new Date(data.capturedAt).toLocaleString('zh-CN') : '--';
+}
+
+async function loadQuotes() {
+  try {
+    const res = await fetch('/api/quotes', { cache: 'no-store' });
+    if (!res.ok) throw new Error(res.status);
+    renderQuotes(await res.json());
+  } catch (err) {
+    quoteGrid.innerHTML = `<div class="error">Quote error: ${esc(err.message)}</div>`;
+  }
+}
+async function loadSnapshot() {
+  try {
+    const res = await fetch('/api/snapshot', { cache: 'no-store' });
+    if (!res.ok) throw new Error(res.status);
+    renderSnapshot(await res.json());
+  } catch (err) {
+    indicatorBody.innerHTML = `<tr><td colspan="11" class="error">Snapshot error: ${esc(err.message)}</td></tr>`;
+  }
+}
+async function loadChart() {
+  try {
+    chartTime.textContent = 'Loading...';
+    const res = await fetch(`/api/chart?symbol=${encodeURIComponent(state.selected)}&range=${state.range}`, { cache: 'no-store' });
+    if (!res.ok) throw new Error(res.status);
+    drawChart(await res.json());
+  } catch (err) {
+    showChartMessage(`Chart error: ${err.message}`, true);
+  }
+}
+
+document.querySelectorAll('[data-range]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    state.range = btn.dataset.range;
+    document.querySelectorAll('[data-range]').forEach(b => b.classList.toggle('active', b === btn));
+    loadChart();
+  });
+});
+document.getElementById('refresh-btn').addEventListener('click', () => Promise.all([loadQuotes(), loadSnapshot(), loadChart()]));
+
+Promise.all([loadQuotes(), loadSnapshot()]).then(loadChart);
+setInterval(loadQuotes, 15_000);
+setInterval(loadChart, 30_000);
+setInterval(loadSnapshot, 300_000);
+</script>
+</body>
+</html>

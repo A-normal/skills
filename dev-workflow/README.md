@@ -17,6 +17,7 @@
 - [账本、暂停与恢复](#账本暂停与恢复)
 - [常用调用方式](#常用调用方式)
 - [Skill 文件结构](#skill-文件结构)
+- [开发者](#开发者)
 
 ## 用途
 
@@ -331,3 +332,8 @@ dev-workflow/
 - `references/outputs.md`：开发合同、报告和验证模板。
 - `references/examples.md`：仅在分类或流程不明确时参考的示例。
 - `README.md`：本中文使用说明，不参与模型运行。
+
+## 开发者
+
+- GitHub：[@A-normal](https://github.com/A-normal)
+- 项目仓库：[A-normal/skills](https://github.com/A-normal/skills)

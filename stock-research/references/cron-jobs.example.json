@@ -1,0 +1,43 @@
+{
+  "jobs": [
+    {
+      "name": "stock-research-daily-pass",
+      "schedule": {
+        "kind": "cron",
+        "expr": "15 7 * * 2-6",
+        "tz": "Asia/Shanghai"
+      },
+      "sessionTarget": "isolated",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "读取 /root/.openclaw/workspace/skills/stock-research/SKILL.md，完成一轮有限的每日研究。运行采集和到期检查，按数据完整性规则验证预测并更新状态；只在满足契约时建立新假设。完成摘要后正常结束，不执行交易，不提供个性化投资建议。",
+        "thinking": "medium",
+        "timeoutSeconds": 1800
+      },
+      "delivery": {
+        "mode": "none"
+      }
+    },
+    {
+      "name": "stock-research-weekly-summary",
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 10 * * 6",
+        "tz": "Asia/Shanghai"
+      },
+      "sessionTarget": "isolated",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "读取 /root/.openclaw/workspace/skills/stock-research/SKILL.md 和状态目录，生成一份有限的周报：数据完整性、已验证假设、仍开放假设、方法修正、下周重点和阻塞项。当前市场结论必须先获取带时间戳的数据；完成后结束。",
+        "thinking": "medium",
+        "timeoutSeconds": 1800
+      },
+      "delivery": {
+        "mode": "announce",
+        "channel": "telegram",
+        "to": "<TELEGRAM_CHAT_ID>",
+        "bestEffort": true
+      }
+    }
+  ]
+}

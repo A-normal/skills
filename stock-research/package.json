@@ -1,0 +1,9 @@
+{
+  "name": "stock-research",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "lightweight-charts": "^5.2.0",
+    "stock-sdk": "^1.10.1"
+  }
+}

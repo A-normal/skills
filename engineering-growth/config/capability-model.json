@@ -1,0 +1,235 @@
+{
+  "schemaVersion": 1,
+  "levels": {
+    "0": "尚未接触或没有可用证据",
+    "1": "理解基础概念，能够跟随示例完成",
+    "2": "能够在指导下完成小型任务",
+    "3": "能够独立交付生产任务并处理常见问题",
+    "4": "能够设计、调试复杂问题并指导他人",
+    "5": "能够做系统级取舍、带领他人并对结果负责"
+  },
+  "evaluation": {
+    "gateCoverage": {
+      "0": 0,
+      "1": 0,
+      "2": 0.4,
+      "3": 0.7,
+      "4": 0.9,
+      "5": 1
+    },
+    "evidenceWeights": {
+      "practice": 1,
+      "code_review": 1.5,
+      "module_review": 3,
+      "project": 4,
+      "incident": 4
+    },
+    "resultFactors": {
+      "pass": 1,
+      "partial": 0.8,
+      "blocked": 0.6,
+      "fail": 0.4
+    },
+    "repeatedNegativeCount": 3,
+    "confidenceWeights": {
+      "medium": 3,
+      "high": 10
+    },
+    "staleAfterDays": 365
+  },
+  "capabilities": [
+    {
+      "id": "frontend.javascript",
+      "name": "JavaScript",
+      "category": "前端基础",
+      "legacyNames": ["JavaScript"],
+      "fundamentals": [
+        { "id": "scope-closure", "name": "作用域与闭包", "core": true },
+        { "id": "prototype", "name": "原型与对象模型", "core": true },
+        { "id": "async-event-loop", "name": "异步与事件循环", "core": true },
+        { "id": "modules", "name": "模块与依赖边界", "core": true },
+        { "id": "errors", "name": "错误处理与资源清理", "core": true }
+      ]
+    },
+    {
+      "id": "frontend.typescript",
+      "name": "TypeScript 类型设计",
+      "category": "前端基础",
+      "legacyNames": ["TypeScript 类型设计"],
+      "fundamentals": [
+        { "id": "narrowing", "name": "类型收窄与判别联合", "core": true },
+        { "id": "generics", "name": "泛型与约束", "core": true },
+        { "id": "modeling", "name": "领域与状态类型建模", "core": true },
+        { "id": "boundary-models", "name": "DTO、Form、View 与提交模型分离", "core": true },
+        { "id": "unsafe-boundaries", "name": "不安全输入与运行时校验", "core": true }
+      ]
+    },
+    {
+      "id": "frontend.vue",
+      "name": "Vue 3 生产交付",
+      "category": "前端核心",
+      "legacyNames": ["Vue 3"],
+      "fundamentals": [
+        { "id": "reactivity", "name": "响应式与更新时机", "core": true },
+        { "id": "component-boundary", "name": "组件职责与通信边界", "core": true },
+        { "id": "composables", "name": "组合式逻辑与复用", "core": true },
+        { "id": "state", "name": "页面与全局状态设计", "core": true },
+        { "id": "performance", "name": "渲染与性能诊断", "core": false },
+        { "id": "testing", "name": "Vue 组件测试", "core": true }
+      ]
+    },
+    {
+      "id": "frontend.css",
+      "name": "HTML/CSS 与可访问性",
+      "category": "前端基础",
+      "legacyNames": ["CSS", "HTML"],
+      "fundamentals": [
+        { "id": "layout", "name": "Flex、Grid 与格式化上下文", "core": true },
+        { "id": "cascade", "name": "层叠、继承与选择器", "core": true },
+        { "id": "responsive", "name": "响应式布局", "core": true },
+        { "id": "semantics", "name": "语义化与可访问性", "core": true }
+      ]
+    },
+    {
+      "id": "frontend.components",
+      "name": "组件与配置驱动设计",
+      "category": "前端架构",
+      "legacyNames": ["组件设计"],
+      "fundamentals": [
+        { "id": "responsibility", "name": "职责与变化原因", "core": true },
+        { "id": "api-design", "name": "组件 API 与扩展点", "core": true },
+        { "id": "config-model", "name": "配置模型与默认值", "core": true },
+        { "id": "runtime-state", "name": "配置与运行状态分离", "core": true },
+        { "id": "failure-state", "name": "加载、失败与保存状态", "core": true }
+      ]
+    },
+    {
+      "id": "platform.configuration",
+      "name": "复杂配置平台工程",
+      "category": "配置平台",
+      "legacyNames": ["CodeMirror 编辑器", "AntV X6 图建模"],
+      "fundamentals": [
+        { "id": "metadata-driven", "name": "元数据与配置驱动", "core": true },
+        { "id": "draft-published", "name": "草稿与发布态隔离", "core": true },
+        { "id": "expressions", "name": "表达式与规则编辑", "core": true },
+        { "id": "graph-model", "name": "图模型与关系维护", "core": false },
+        { "id": "linked-consistency", "name": "规则联动与一致性", "core": true }
+      ]
+    },
+    {
+      "id": "business.modeling",
+      "name": "业务与领域建模",
+      "category": "业务工程",
+      "legacyNames": ["业务流程理解", "领域对象建模"],
+      "fundamentals": [
+        { "id": "entities", "name": "实体、值对象与关系", "core": true },
+        { "id": "invariants", "name": "业务不变量与校验", "core": true },
+        { "id": "process", "name": "流程、角色与责任边界", "core": true },
+        { "id": "language", "name": "统一业务语言", "core": true },
+        { "id": "exceptions", "name": "异常路径与补偿", "core": true }
+      ]
+    },
+    {
+      "id": "business.state-permission",
+      "name": "状态机与权限边界",
+      "category": "业务工程",
+      "legacyNames": ["状态机/流程边界", "权限/菜单/路由"],
+      "fundamentals": [
+        { "id": "states", "name": "状态与合法迁移", "core": true },
+        { "id": "roles", "name": "角色、资源与动作", "core": true },
+        { "id": "frontend-backend", "name": "前后端权限责任", "core": true },
+        { "id": "audit", "name": "审计与可追踪性", "core": true }
+      ]
+    },
+    {
+      "id": "api.data-contracts",
+      "name": "API 与数据契约",
+      "category": "API 与数据",
+      "legacyNames": ["REST/HTTP 联调", "DTO/协议转换", "文件流/上传下载"],
+      "fundamentals": [
+        { "id": "contracts", "name": "请求响应契约", "core": true },
+        { "id": "errors", "name": "错误码与失败语义", "core": true },
+        { "id": "conversion", "name": "编辑模型与传输模型转换", "core": true },
+        { "id": "idempotency", "name": "幂等与重复请求", "core": true },
+        { "id": "files", "name": "上传下载与文件流", "core": false }
+      ]
+    },
+    {
+      "id": "quality.testing",
+      "name": "测试策略",
+      "category": "质量与调试",
+      "legacyNames": ["测试策略"],
+      "fundamentals": [
+        { "id": "risk-selection", "name": "按风险选择测试层级", "core": true },
+        { "id": "unit", "name": "单元与纯逻辑测试", "core": true },
+        { "id": "integration", "name": "组件与接口集成测试", "core": true },
+        { "id": "e2e", "name": "关键路径端到端测试", "core": false },
+        { "id": "fixtures", "name": "测试数据与隔离", "core": true }
+      ]
+    },
+    {
+      "id": "quality.debugging",
+      "name": "调试与根因分析",
+      "category": "质量与调试",
+      "legacyNames": ["日志/线上问题分析", "package/依赖版本排查"],
+      "fundamentals": [
+        { "id": "reproduce", "name": "稳定复现", "core": true },
+        { "id": "isolate", "name": "缩小变量与定位层级", "core": true },
+        { "id": "network-logs", "name": "网络、日志与状态证据", "core": true },
+        { "id": "root-cause", "name": "根因与触发条件", "core": true },
+        { "id": "prevention", "name": "修复验证与预防", "core": true }
+      ]
+    },
+    {
+      "id": "delivery.frontend-engineering",
+      "name": "前端工程与交付",
+      "category": "工程交付",
+      "legacyNames": ["Vite/构建", "Vite 代理/多后端联调"],
+      "fundamentals": [
+        { "id": "dependencies", "name": "依赖与版本治理", "core": true },
+        { "id": "build", "name": "构建配置与性能", "core": true },
+        { "id": "quality-gates", "name": "lint、类型与测试门禁", "core": true },
+        { "id": "ci", "name": "持续集成与产物", "core": true },
+        { "id": "environments", "name": "环境与代理配置", "core": true }
+      ]
+    },
+    {
+      "id": "backend.literacy",
+      "name": "后端与数据基础",
+      "category": "全栈边界",
+      "legacyNames": ["后端基础"],
+      "fundamentals": [
+        { "id": "service", "name": "服务端分层与接口", "core": true },
+        { "id": "sql", "name": "SQL 与事务", "core": true },
+        { "id": "auth", "name": "认证与授权流程", "core": true },
+        { "id": "async", "name": "队列、缓存与定时任务", "core": false }
+      ]
+    },
+    {
+      "id": "delivery.ops",
+      "name": "运维与可观测性",
+      "category": "工程交付",
+      "legacyNames": ["运维/可观测性"],
+      "fundamentals": [
+        { "id": "linux", "name": "Linux 与进程服务", "core": true },
+        { "id": "proxy-tls", "name": "Nginx、网络与 TLS", "core": true },
+        { "id": "containers", "name": "容器与运行环境", "core": false },
+        { "id": "observability", "name": "日志、指标与探针", "core": true },
+        { "id": "rollback", "name": "部署验证与回滚", "core": true }
+      ]
+    },
+    {
+      "id": "ownership.communication",
+      "name": "沟通与交付责任",
+      "category": "责任与协作",
+      "legacyNames": ["模块 ownership"],
+      "fundamentals": [
+        { "id": "clarification", "name": "需求澄清与边界", "core": true },
+        { "id": "estimation", "name": "估时与拆解", "core": true },
+        { "id": "risk", "name": "风险报告与决策记录", "core": true },
+        { "id": "collaboration", "name": "产品、后端与测试协作", "core": true },
+        { "id": "outcomes", "name": "模块结果责任", "core": true }
+      ]
+    }
+  ]
+}
