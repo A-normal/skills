@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "YYYY-MM-DD-module-topic",
+  "kind": "practice",
+  "occurredAt": "YYYY-MM-DDTHH:MM:SS+08:00",
+  "module": "模块名称",
+  "task": "练习内容",
+  "artifacts": [],
+  "capabilities": [
+    {
+      "id": "frontend.typescript",
+      "levelSignal": 2,
+      "result": "partial",
+      "independence": 0.7,
+      "coveredFundamentals": ["narrowing"],
+      "errors": ["具体错误"],
+      "observations": ["具体表现"],
+      "nextPractice": "下一次针对性练习"
+    }
+  ]
+}

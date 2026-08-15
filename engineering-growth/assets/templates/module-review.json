@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "YYYY-MM-module-review",
+  "kind": "module_review",
+  "occurredAt": "YYYY-MM-DDTHH:MM:SS+08:00",
+  "module": "模块名称",
+  "summary": "阶段评价",
+  "capabilities": [
+    {
+      "id": "frontend.typescript",
+      "levelSignal": 2,
+      "result": "partial",
+      "independence": 0.8,
+      "coverageComplete": true,
+      "coveredFundamentals": ["narrowing", "generics"],
+      "missingFundamentals": ["modeling", "boundary-models", "unsafe-boundaries"],
+      "strengths": [],
+      "repeatedErrors": [],
+      "nextModuleFocus": []
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "jobs": [
+    {
+      "name": "github-openclaw-slim-backup",
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 9 * * 0",
+        "tz": "Asia/Shanghai"
+      },
+      "sessionTarget": "isolated",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "读取 /root/.openclaw/workspace/skills/openclaw-backup/SKILL.md，执行每周 slim 备份。先检查固定配置文件及权限，不得输出任何凭据。运行 /root/.openclaw/workspace/skills/openclaw-backup/scripts/openclaw-backup.sh slim --prune。成功时只简要报告资产名和 Release URL，失败时报告不含秘密的错误阶段。",
+        "timeoutSeconds": 7200
+      },
+      "delivery": {
+        "mode": "none"
+      }
+    },
+    {
+      "name": "github-openclaw-full-quarterly-backup",
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 9 1 1,4,7,10 *",
+        "tz": "Asia/Shanghai"
+      },
+      "sessionTarget": "isolated",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "读取 /root/.openclaw/workspace/skills/openclaw-backup/SKILL.md，执行季度 full 备份。先检查固定配置文件及权限，不得输出任何凭据。运行 /root/.openclaw/workspace/skills/openclaw-backup/scripts/openclaw-backup.sh full --prune。成功时只简要报告资产名和 Release URL，失败时报告不含秘密的错误阶段。",
+        "timeoutSeconds": 21600
+      },
+      "delivery": {
+        "mode": "announce",
+        "channel": "telegram",
+        "to": "<TELEGRAM_CHAT_ID>",
+        "bestEffort": true
+      }
+    }
+  ]
+}

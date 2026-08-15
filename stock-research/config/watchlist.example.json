@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "timezone": "Asia/Shanghai",
+  "symbols": [
+    {
+      "id": "sse-composite",
+      "label": "上证指数",
+      "market": "A",
+      "quoteSymbol": "sh000001",
+      "technicalSymbol": "sh000001",
+      "role": "A股市场基准示例",
+      "enabled": true
+    },
+    {
+      "id": "tencent-hk",
+      "label": "腾讯",
+      "market": "HK",
+      "quoteSymbol": "00700",
+      "technicalSymbol": "00700",
+      "role": "港股大型科技示例",
+      "enabled": true
+    },
+    {
+      "id": "apple",
+      "label": "Apple",
+      "market": "US",
+      "quoteSymbol": "AAPL",
+      "technicalSymbol": "105.AAPL",
+      "role": "美股大型科技示例",
+      "enabled": true
+    }
+  ],
+  "indicators": {
+    "ma": {
+      "periods": [5, 10, 20, 50]
+    },
+    "macd": true,
+    "rsi": {
+      "periods": [6, 14]
+    },
+    "atr": {
+      "period": 14
+    },
+    "boll": {
+      "period": 20,
+      "multiplier": 2
+    }
+  }
+}

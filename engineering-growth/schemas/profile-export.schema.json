@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:engineering-growth:profile-export:v1",
+  "title": "Engineering Growth Profile Export",
+  "type": "object",
+  "required": ["schemaVersion", "generatedAt", "profile", "capabilities", "gaps", "trainingPriorities"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "profile": {
+      "type": "object",
+      "required": ["name", "positioning"],
+      "properties": {
+        "name": { "type": "string" },
+        "positioning": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "capabilities": { "type": "array", "items": { "type": "object" } },
+    "practiceHistory": { "type": "array", "items": { "type": "object" } },
+    "moduleReviews": { "type": "array", "items": { "type": "object" } },
+    "gaps": { "type": "array", "items": { "type": "object" } },
+    "trainingPriorities": { "type": "array", "items": { "type": "object" } }
+  },
+  "additionalProperties": false
+}
