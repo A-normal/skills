@@ -1,50 +1,48 @@
 ---
-name: stock-research
-description: 维护个人 A股、港股和美股观察池的一轮式股票研究流程，包含行情与技术快照、可证伪假设、到期验证、知识沉淀、周报以及可选只读仪表盘。用于定时或按需完成有限研究任务、复核既有预测或更新研究状态；只用于学习研究，不执行交易，不提供个性化投资建议，当前数据不足时必须降级或停止生成新假设。
+name: "stock-research"
+description: "A股和美股的数据质检、策略实验、前向纸面信号与自动评分；仅研究，不交易。"
 ---
 
-# 股票研究闭环
+# 股票研究实验闭环 v2
+
+目标不是复述行情，而是积累可复现、可证伪、能支持未来实践的证据。
 
 ## 边界
 
-- 每次调用只完成一轮有限研究并正常结束；cron 负责下次唤醒。
-- 不执行交易、不移动资金、不提供个性化投资建议。
-- 当前价格、趋势、财报日期、宏观事件和市场情绪必须使用带时间戳的当前数据。
-- 行情或技术数据不完整时，不创建新预测。
-- 新闻不可用时允许保存客观快照和验证既有技术假设，但禁止因果解释与事件驱动预测。
-- 仪表盘是可选只读展示层，不修改研究状态，也不属于每日研究的必需步骤。
+- 仅研究和纸面验证；不下单、不移动资金、不提供个性化投资建议。
+- 研究范围以美股和 A 股为主，优先存储、电池、能源；每个标的必须绑定研究角色和基准。
+- 第一阶段只研究价格、成交量及公司行为调整后的日线策略。新闻、财报、宏观和事件策略在数据链通过验收后再加入。
+- 单轮任务有限执行并结束。没有新增证据时静默，不生成行情流水账。
 
-## 固定路径
+## 事实归属
 
-- Skill：`/root/.openclaw/workspace/skills/stock-research`
-- 状态：`/root/.openclaw/workspace/state/stock-research`
-- 观察池：本地 `config/watchlist.json`，从 `config/watchlist.example.json` 初始化且不提交
-- 预测：状态目录下的 `predictions/*.md`
-- 快照：状态目录下的 `snapshots/*.json`
+- 确定性脚本负责数据 QA、信号计算、历史实验、前向记录、到期评分和统计汇总。
+- Agent 负责提出研究问题、选择预注册配置、解释机器结果和记录方法修正。
+- Agent 不得手写或改写收益、评分、`promoted`、信号状态，也不得把未通过门槛的策略包装成预测。
+- 原始数据、策略版本、实验结果、前向信号和评分均以机器可读文件为事实源；Markdown 只做解释。
 
-## 单轮研究流程
+## 状态目录
 
-1. 读取 `config/watchlist.json`、状态摘要和所有到期预测。
-2. 运行 `node scripts/collect-market-data.mjs`，确认输出的 `status` 与数据时间。
-3. 获取可靠的当前新闻、指数、行业和宏观上下文；记录来源时间。
-4. 优先验证到期预测，再决定是否建立新假设。
-5. 新预测必须写入独立文件，包含标的、创建时间、数据时间、期限、复核时间、置信度、证据和失效条件。
-6. 验证结果回写原预测文件，不另建重复的 validation 事实来源。
-7. 只有出现可复用的新认识时才更新 `knowledge.md`。
-8. 输出本轮数据完整性、验证结果、新假设、阻塞项和下一复核时间，然后结束。
+`/root/.openclaw/workspace/state/stock-research-v2/` 下使用：
 
-先运行以下命令查看待复核预测：
+- `program.json`：研究范围、阶段、数据需求和晋级门槛。
+- `universe.json`：标的、行业角色、市场、基准和数据源。
+- `raw/`、`normalized/`、`quality/`：不可覆盖的原始数据、规范化数据和 QA 报告。
+- `strategies/`：已预注册且版本化的策略配置。
+- `experiments/`：历史实验与朴素基线结果。
+- `forward-signals/`：不可变纸面信号。
+- `forward-results/`：到期后的机器评分，与信号分开保存。
+- `reports/`：仅汇总新增证据。
+- `legacy/`：v1 资产清单及 `legacy_untrusted` 标记，不参与胜率或晋级统计。
 
-```bash
-node /root/.openclaw/workspace/skills/stock-research/scripts/research-status.mjs
-```
+## 单轮流程
 
-## 假设纪律
+1. 读取 `program.json`、`universe.json`、已预注册策略和待评分信号。
+2. 只采集当前研究问题声明所需的数据；原始响应保留来源、抓取时间、交易日、时区、币种、复权方式和 schema 版本。
+3. 运行 `node scripts/research-v2.mjs qa ...`。最新交易日、K 线数量、OHLCV、重复/乱序、指标输入和双源差异任一硬检查失败，数据不得进入实验或信号。
+4. 历史实验运行固定策略和固定开发/测试分段，同时计算基准。不得在测试段上调参后仍称其为测试结果。
+5. 只有机器结果 `promoted: true` 的策略，才能运行 `register` 生成一条不可变前向纸面信号；没有合格 setup 就不生成记录。
+6. 对到期信号运行 `score`。结果由冻结规则计算，Agent 只能补充解释。
+7. 周期报告只包含新 QA 变化、新实验、策略晋级/淘汰、新信号和新评分；无新增证据则静默。
 
-- 使用固定的 setup-time 阈值，避免移动目标。
-- 明确方向或情景、期限、置信度、失效条件和复核日期。
-- 预测结果只能评价已声明时间窗，不能自动延伸为长期观点。
-- 缺少新闻时，新技术假设必须标记 `context_incomplete: true`，且置信度只能为 `low`。
-- 没有满足要求的 setup 时，明确记录“本轮不建立新预测”。
-
-需要预测格式与数据降级规则时读取 [references/research-contract.md](references/research-contract.md)；需要初始化、迁移、cron 或仪表盘时读取 [references/operations.md](references/operations.md)。
+先读 [references/v2-contract.md](references/v2-contract.md)。初始化、迁移、验收或恢复调度时再读 [references/operations.md](references/operations.md)。
