@@ -73,3 +73,4 @@ stock-research/assets/dashboard/public/vendor/
 **/.DS_Store
 **/Thumbs.db
 **/Desktop.ini
+.dev-workflow

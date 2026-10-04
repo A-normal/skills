@@ -1,0 +1,9 @@
+{
+  "name": "profile-curator",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check scripts/profile-curator.mjs",
+    "test": "node --test"
+  }
+}

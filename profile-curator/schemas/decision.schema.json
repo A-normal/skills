@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local/profile-curator/decision.schema.json",
+  "title": "Profile Curator decision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "candidateId", "action", "decidedAt", "actor"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "candidateId": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "action": {
+      "enum": ["accept", "edit", "reject", "suppress", "defer", "supersede", "external_modified", "applied"]
+    },
+    "decidedAt": { "type": "string", "format": "date-time" },
+    "actor": { "enum": ["user", "external_workflow", "profile_curator_apply"] },
+    "note": { "type": "string", "maxLength": 1000 },
+    "replacementClaim": { "type": "string", "minLength": 1, "maxLength": 800 },
+    "targetRevision": { "type": "string", "maxLength": 128 }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "integration": "openclaw",
+  "integrationVersion": "1.0.0",
+  "validatedHostBaseline": "2026.9.5",
+  "agent": "main",
+  "root": "/root/.openclaw",
+  "evidenceAccess": {
+    "requiredTools": ["memory_search", "memory_get", "sessions_search"],
+    "directTranscriptDatabaseAccess": false
+  },
+  "semanticTargets": {
+    "user_preference": {
+      "path": "/root/.openclaw/workspace/USER.md",
+      "mode": "managed-section"
+    },
+    "agent_method": {
+      "resolver": "external-review",
+      "mode": "proposal-only"
+    },
+    "persona_self": {
+      "resolver": "openclaw-persona-target-ref",
+      "mode": "proposal-only"
+    }
+  },
+  "stateDirectory": "/root/.openclaw/workspace/state/profile-curator",
+  "generatedDirectory": "/root/.openclaw/workspace/generated/profile-curator",
+  "automation": {
+    "provider": "gateway",
+    "defaultCadence": "weekly",
+    "sessionTarget": "isolated",
+    "finiteRun": true
+  },
+  "requiredWriteCapabilities": [
+    "revision-check",
+    "backup",
+    "same-directory-atomic-replace",
+    "post-write-validation",
+    "rollback"
+  ]
+}

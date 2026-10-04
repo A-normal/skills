@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local/profile-curator/observation.schema.json",
+  "title": "Profile Curator observation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "category",
+    "topicKey",
+    "valueKey",
+    "claim",
+    "scope",
+    "relation",
+    "source",
+    "summary",
+    "sensitivity"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "category": {
+      "enum": ["user_preference", "agent_method", "persona_self"]
+    },
+    "topicKey": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,95}$"
+    },
+    "valueKey": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,95}$"
+    },
+    "claim": { "type": "string", "minLength": 1, "maxLength": 800 },
+    "scope": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "personaTargetRef": { "type": "string", "minLength": 1, "maxLength": 300 },
+    "relation": {
+      "enum": ["new_candidate", "supports", "contradicts", "related", "uncertain"]
+    },
+    "counterEvidenceFor": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 80 }
+    },
+    "relatedCandidateIds": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 80 }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref",
+        "sessionRef",
+        "occurredAt",
+        "role",
+        "sourceType",
+        "topLevel",
+        "quoted",
+        "origin"
+      ],
+      "properties": {
+        "ref": { "type": "string", "minLength": 1, "maxLength": 400 },
+        "sessionRef": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "occurredAt": { "type": "string", "format": "date-time" },
+        "role": { "enum": ["user", "assistant", "tool"] },
+        "sourceType": {
+          "enum": [
+            "explicit_long_term_statement",
+            "direct_feedback",
+            "inferred_behavior",
+            "verified_outcome",
+            "user_review"
+          ]
+        },
+        "topLevel": { "type": "boolean" },
+        "quoted": { "type": "boolean" },
+        "origin": { "enum": ["primary_event", "curator_output"] }
+      }
+    },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "sensitivity": { "enum": ["normal", "sensitive", "forbidden"] },
+    "severity": { "enum": ["normal", "high"] }
+  }
+}

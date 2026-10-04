@@ -1,0 +1,21 @@
+{
+  "jobs": [
+    {
+      "name": "profile-curator-weekly",
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 10 * * 0",
+        "tz": "Asia/Shanghai"
+      },
+      "sessionTarget": "isolated",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "读取 /root/.openclaw/agents/main/agent/workshop-skills/profile-curator/SKILL.md，执行一轮有限的每周画像整理。只使用 OpenClaw 受控 memory/session 检索能力，不直接读取数据库。首次运行只预览；后续按最后成功水位增量处理。模型只提取脱敏观察，晋升、冲突和计数必须由 Skill 的确定性脚本完成。只有满足严格证据、安全写入、版本检查、备份和验证条件的 USER.md 受管区块可以自动应用；AGENTS、SOUL、IDENTITY 和任何 Skill 永远只生成提案。只有整轮成功后才运行 complete-run 提交来源水位；任何步骤失败都保留旧水位。没有重要变化时静默，完成后退出。",
+        "timeoutSeconds": 1800
+      },
+      "delivery": {
+        "mode": "none"
+      }
+    }
+  ]
+}
