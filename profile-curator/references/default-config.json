@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 2,
+  "policyVersion": "1.1.0",
+  "mode": "proposal_only",
+  "evidenceWindowDays": 90,
+  "requiredInferredUserSessions": 3,
+  "requiredAgentMethodSessions": 2,
+  "requiredPersonaSessions": 2,
+  "initialBackfillDays": 30,
+  "initialBackfillMaxSessions": 100,
+  "maxRecordsPerRun": 200,
+  "maxFutureSkewMinutes": 5,
+  "staleLockMinAgeSeconds": 600,
+  "sensitiveEvidencePolicy": "reject",
+  "integration": {
+    "host": "openclaw",
+    "validatedHostBaseline": "2026.9.5",
+    "requiredTools": [
+      "sessions_list",
+      "sessions_history"
+    ],
+    "supplementalTools": [
+      "memory_search",
+      "memory_get",
+      "sessions_search"
+    ],
+    "allowedAgents": [
+      "main"
+    ],
+    "allowedChatScopes": [
+      "direct"
+    ],
+    "allowedUserIds": []
+  },
+  "taxonomy": {
+    "allowedScopes": [
+      "global",
+      "communication",
+      "workflow",
+      "coding",
+      "research",
+      "operations"
+    ],
+    "unknownTopicKey": "other.review_only",
+    "userPreferenceTopics": {
+      "communication.response_detail": [
+        "concise",
+        "balanced",
+        "detailed"
+      ],
+      "communication.format": [
+        "prose_first",
+        "list_first",
+        "structured"
+      ],
+      "communication.language": [
+        "zh_cn",
+        "en",
+        "mixed"
+      ],
+      "workflow.change_authorization": [
+        "plan_then_confirm",
+        "execute_when_requested"
+      ],
+      "workflow.validation_reporting": [
+        "brief",
+        "evidence_detailed"
+      ],
+      "other.review_only": [
+        "manual"
+      ]
+    }
+  }
+}

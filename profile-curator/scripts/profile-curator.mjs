@@ -3,27 +3,38 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { applyUserManagedSection } from './lib/apply-user.mjs';
-import { evaluateCandidates, validateDecision, validateObservation } from './lib/engine.mjs';
+import {
+  evaluateCandidates,
+  validateCollectionReceipt,
+  validateConfig,
+  validateDecision,
+  validateObservation,
+} from './lib/engine.mjs';
 import { renderProposal } from './lib/render.mjs';
 import {
   DEFAULT_GENERATED_DIR,
   DEFAULT_STATE_DIR,
   acquireLock,
-  appendJsonl,
+  canonicalStringify,
+  hashStateInputs,
   initializeState,
+  inspectLock,
   pathExists,
   readJson,
   readJsonl,
+  recoverStaleLock,
   safeTimestamp,
   sha256File,
+  sha256Text,
   statePaths,
   writeJsonAtomic,
+  writeJsonlAtomic,
 } from './lib/state.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const skillDir = path.resolve(scriptDir, '..');
-const defaultConfigPath = path.join(skillDir, 'config', 'default.json');
+const defaultConfigPath = path.join(skillDir, 'references', 'default-config.json');
+const RUN_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,159}$/u;
 
 function parseArgs(argv) {
   const [command, ...rest] = argv;
@@ -32,6 +43,7 @@ function parseArgs(argv) {
     const token = rest[index];
     if (!token.startsWith('--')) throw new Error(`未知参数：${token}`);
     const key = token.slice(2);
+    if (key in options) throw new Error(`重复参数：--${key}`);
     const next = rest[index + 1];
     if (!next || next.startsWith('--')) options[key] = true;
     else {
@@ -46,18 +58,20 @@ function output(value) {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 }
 
-function canonicalStringify(value) {
-  if (Array.isArray(value)) return `[${value.map(canonicalStringify).join(',')}]`;
-  if (value && typeof value === 'object') {
-    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalStringify(value[key])}`).join(',')}}`;
-  }
-  return JSON.stringify(value);
-}
-
 function requiredOption(options, key) {
   const value = options[key];
   if (typeof value !== 'string' || value.length === 0) throw new Error(`缺少 --${key}`);
   return value;
+}
+
+function validateRunId(value) {
+  if (!RUN_ID_PATTERN.test(value ?? '')) throw new Error('run-id 格式无效');
+  return value;
+}
+
+function validIso(value, field) {
+  if (typeof value !== 'string' || !Number.isFinite(Date.parse(value))) throw new Error(`${field} 无效`);
+  return new Date(Date.parse(value)).toISOString();
 }
 
 async function readStructuredInput(filePath) {
@@ -82,33 +96,14 @@ async function readStructuredInput(filePath) {
   return records;
 }
 
-function validateConfig(config) {
-  if (config.schemaVersion !== 1) throw new Error('config schemaVersion 必须为 1');
-  for (const key of [
-    'evidenceWindowDays',
-    'requiredInferredUserSessions',
-    'requiredAgentMethodSessions',
-    'requiredPersonaSessions',
-    'initialBackfillDays',
-    'initialBackfillMaxSessions',
-    'maxRecordsPerRun',
-  ]) {
-    if (!Number.isInteger(config[key]) || config[key] <= 0) throw new Error(`config.${key} 必须是正整数`);
-  }
-  if (!config.managedUserSection?.startMarker || !config.managedUserSection?.endMarker || !config.managedUserSection?.heading) {
-    throw new Error('config.managedUserSection 不完整');
-  }
-  if (config.integration?.host !== 'openclaw' || typeof config.integration?.targets?.userPreference !== 'string') {
-    throw new Error('config.integration OpenClaw 目标不完整');
-  }
-  if (config.managedUserSection.startMarker === config.managedUserSection.endMarker) throw new Error('受管区块起止标记不能相同');
-  return config;
-}
-
 async function loadState(stateDir) {
   const paths = statePaths(stateDir);
   if (!(await pathExists(paths.config))) throw new Error(`状态未初始化：${stateDir}`);
-  const config = validateConfig(await readJson(paths.config));
+  const rawConfig = await readJson(paths.config);
+  if (rawConfig.schemaVersion === 1) {
+    throw new Error('检测到 v1 状态。其来源元数据无法满足 v2 契约；请保留旧目录并使用新的 v2 状态目录，禁止静默迁移');
+  }
+  const config = validateConfig(rawConfig);
   return { paths, config };
 }
 
@@ -121,196 +116,422 @@ async function withLock(stateDir, callback) {
   }
 }
 
+function hashesEqual(left, right) {
+  return canonicalStringify(left) === canonicalStringify(right);
+}
+
+async function assertStateHashes(paths, expected, label) {
+  const current = await hashStateInputs(paths);
+  if (!hashesEqual(current, expected)) throw new Error(`${label} 后状态输入已变化，旧快照失效`);
+  return current;
+}
+
 async function commandInit(stateDir) {
   return withLock(stateDir, async () => {
     const paths = await initializeState(stateDir, defaultConfigPath);
-    return { status: 'initialized', stateDir: paths.root, files: paths };
+    const config = validateConfig(await readJson(paths.config));
+    return {
+      status: 'initialized',
+      mode: config.mode,
+      stateDir: paths.root,
+      userAllowlistConfigured: config.integration.allowedUserIds.length > 0,
+      files: paths,
+    };
   });
 }
 
-async function commandIngest(stateDir, options) {
+async function commandBeginRun(stateDir, options) {
+  const runId = validateRunId(requiredOption(options, 'run-id'));
+  return withLock(stateDir, async () => {
+    const { paths, config } = await loadState(stateDir);
+    if (config.integration.allowedUserIds.length === 0) throw new Error('先在 config.json 中配置 allowedUserIds');
+    if (await pathExists(paths.activeRun)) {
+      const active = await readJson(paths.activeRun);
+      throw new Error(`已有未完成运行：${active.runId}`);
+    }
+    const startedAt = options['started-at'] ? validIso(options['started-at'], 'started-at') : new Date().toISOString();
+    if (Date.parse(startedAt) > Date.now() + config.maxFutureSkewMinutes * 60000) throw new Error('started-at 超出允许的未来时间偏差');
+    const baseHashes = await hashStateInputs(paths);
+    const active = {
+      schemaVersion: 2,
+      runId,
+      phase: 'begun',
+      startedAt,
+      evidenceTrust: 'declared',
+      baseHashes,
+    };
+    await writeJsonAtomic(paths.activeRun, active);
+    return { status: 'begun', runId, phase: active.phase, baseHashes };
+  });
+}
+
+function observationComparable(item) {
+  const { ingestedAt, ...rest } = item;
+  return rest;
+}
+
+function receiptSessionMap(receipt) {
+  return new Map(receipt.sessions.map((item) => [item.sessionId, item]));
+}
+
+async function commandCollect(stateDir, options) {
+  const runId = validateRunId(requiredOption(options, 'run-id'));
+  const receiptPath = requiredOption(options, 'receipt');
   const inputPath = requiredOption(options, 'input');
   return withLock(stateDir, async () => {
     const { paths, config } = await loadState(stateDir);
+    const active = await readJson(paths.activeRun, null);
+    if (!active || active.runId !== runId || active.phase !== 'begun') throw new Error('collect 需要匹配的 begun active run');
+    await assertStateHashes(paths, active.baseHashes, 'begin-run');
+
+    const receiptInput = await readStructuredInput(receiptPath);
+    if (receiptInput.length !== 1) throw new Error('receipt 每次只接受一个对象');
+    const receipt = validateCollectionReceipt(receiptInput[0], config);
+    if (receipt.runId !== runId) throw new Error('receipt.runId 与 active run 不匹配');
+    if (Date.parse(receipt.collectedAt) < Date.parse(active.startedAt)) throw new Error('receipt.collectedAt 早于 begin-run');
+
     const raw = await readStructuredInput(inputPath);
     if (raw.length > config.maxRecordsPerRun) throw new Error(`本轮输入 ${raw.length} 条，超过 maxRecordsPerRun=${config.maxRecordsPerRun}`);
-    const existing = await readJsonl(paths.candidates);
-    const now = new Date().toISOString();
-    const normalized = raw.map(validateObservation);
-    const knownById = new Map();
-    const existingNormalized = existing.map((item) => {
-      const validated = validateObservation(item);
-      if (item.candidateId && item.candidateId !== validated.candidateId) throw new Error(`状态中的 candidateId 与确定性计算不匹配：${item.id}`);
-      knownById.set(validated.id, validated);
-      return validated;
-    });
-    const availableCandidateIds = new Set([
-      ...existingNormalized.map((item) => item.candidateId),
-      ...normalized.map((item) => item.candidateId),
-    ]);
+    const normalized = raw.map((item) => validateObservation(item, { config, now: receipt.collectedAt }));
+    const sessions = receiptSessionMap(receipt);
     for (const item of normalized) {
+      const session = sessions.get(item.evidence.sessionId);
+      if (!session) throw new Error(`观察引用了 receipt 中不存在的 session：${item.evidence.sessionId}`);
+      for (const key of ['sessionKey', 'agentId', 'chatScope', 'userId']) {
+        if (item.evidence[key] !== session[key]) throw new Error(`观察 evidence.${key} 与 receipt 不匹配`);
+      }
+    }
+
+    const lastRun = await readJson(paths.lastRun);
+    for (const session of receipt.sessions) {
+      const previous = lastRun.sourceWatermarks?.[session.sessionId] ?? null;
+      if (session.previousWatermark !== previous) throw new Error(`session ${session.sessionId} 的 previousWatermark 与最后成功水位不一致`);
+    }
+    if (!lastRun.completedAt) {
+      const cutoff = Date.parse(receipt.collectedAt) - config.initialBackfillDays * 86400000;
+      if (normalized.some((item) => Date.parse(item.evidence.occurredAt) < cutoff)) {
+        throw new Error(`首次回看不得超过 ${config.initialBackfillDays} 天`);
+      }
+    }
+
+    const existingRaw = await readJsonl(paths.observations);
+    const existing = existingRaw.map((item) => validateObservation(item, { config, now: receipt.collectedAt, stored: true }));
+    const candidateRoots = new Set([
+      ...existing.map((item) => item.candidateId),
+      ...normalized.filter((item) => ['new_candidate', 'contradicts', 'uncertain'].includes(item.relation)).map((item) => item.candidateId),
+    ]);
+    const availableCandidateIds = new Set([...candidateRoots, ...normalized.map((item) => item.candidateId)]);
+    for (const item of normalized) {
+      if (item.relation === 'supports' && !candidateRoots.has(item.candidateId)) {
+        throw new Error(`supports 观察没有已存在或同批 new_candidate：${item.id}`);
+      }
       for (const targetId of [...item.counterEvidenceFor, ...item.relatedCandidateIds]) {
         if (!availableCandidateIds.has(targetId)) throw new Error(`观察 ${item.id} 引用了不存在的候选：${targetId}`);
       }
     }
+
+    const knownById = new Map(existing.map((item) => [item.id, item]));
     const accepted = [];
-    const skipped = [];
+    const duplicates = [];
     for (const item of normalized) {
       const known = knownById.get(item.id);
       if (known) {
-        if (canonicalStringify(known) !== canonicalStringify(item)) throw new Error(`观察 ID 冲突且内容不同：${item.id}`);
-        skipped.push(item.id);
+        if (canonicalStringify(observationComparable(known)) !== canonicalStringify(item)) {
+          throw new Error(`同一 source event 与 candidate 产生了不同观察：${item.id}`);
+        }
+        duplicates.push(item.id);
         continue;
       }
-      accepted.push({ ...item, ingestedAt: now });
-      knownById.set(item.id, item);
+      const stored = { ...item, ingestedAt: receipt.collectedAt };
+      accepted.push(stored);
+      knownById.set(item.id, stored);
     }
-    await appendJsonl(paths.candidates, accepted);
-    return { status: 'ingested', received: raw.length, accepted: accepted.length, duplicateIds: skipped };
+    await writeJsonlAtomic(paths.observations, [...existingRaw, ...accepted]);
+    const collectionStateHashes = await hashStateInputs(paths);
+    const sourceWatermarks = Object.fromEntries(receipt.sessions.map((item) => [item.sessionId, item.observedThroughMessageId]));
+    const nextActive = {
+      ...active,
+      phase: 'collected',
+      collectedAt: receipt.collectedAt,
+      receiptSha256: sha256Text(canonicalStringify(receipt)),
+      collectionStateHashes,
+      recordsProcessed: raw.length,
+      recordsAccepted: accepted.length,
+      duplicateObservationIds: duplicates,
+      sessionsScanned: receipt.sessions.length,
+      backlogRemaining: receipt.sessions.reduce((sum, item) => sum + item.backlogRemaining, 0),
+      coverageComplete: receipt.sessions.every((item) => item.complete),
+      sourceWatermarks,
+      sourceWatermarksTrust: 'declared',
+    };
+    await writeJsonAtomic(paths.activeRun, nextActive);
+    return {
+      status: 'collected',
+      runId,
+      received: raw.length,
+      accepted: accepted.length,
+      duplicateObservationIds: duplicates,
+      sessionsScanned: nextActive.sessionsScanned,
+      backlogRemaining: nextActive.backlogRemaining,
+    };
   });
 }
 
 async function commandEvaluate(stateDir, options) {
+  const runId = validateRunId(requiredOption(options, 'run-id'));
   return withLock(stateDir, async () => {
     const { paths, config } = await loadState(stateDir);
-    const observations = await readJsonl(paths.candidates);
+    const active = await readJson(paths.activeRun, null);
+    if (!active || active.runId !== runId || active.phase !== 'collected') throw new Error('evaluate 需要匹配的 collected active run');
+    const inputHashes = await assertStateHashes(paths, active.collectionStateHashes, 'collect');
+    const asOf = options['as-of'] ? validIso(options['as-of'], 'as-of') : new Date().toISOString();
+    if (Date.parse(asOf) < Date.parse(active.collectedAt)) throw new Error('as-of 早于 collectedAt');
+    if (Date.parse(asOf) > Date.now() + config.maxFutureSkewMinutes * 60000) throw new Error('as-of 超出允许的未来时间偏差');
+    const observations = await readJsonl(paths.observations);
     const decisions = await readJsonl(paths.decisions);
-    const lastRun = await readJson(paths.lastRun, { schemaVersion: 1, initialPreviewCompleted: false });
-    const initialPreview = !lastRun.initialPreviewCompleted;
-    const asOf = typeof options['as-of'] === 'string' ? new Date(options['as-of']).toISOString() : new Date().toISOString();
-    const view = evaluateCandidates({ observations, decisions, config, asOf, initialPreview });
+    const view = evaluateCandidates({ observations, decisions, config, asOf, runId, inputHashes });
     await writeJsonAtomic(paths.currentView, view);
-    return { status: 'evaluated', initialPreview, ...view.summary, currentView: paths.currentView };
+    const viewSha256 = sha256Text(canonicalStringify(view));
+    await writeJsonAtomic(paths.activeRun, { ...active, phase: 'evaluated', evaluatedAt: view.generatedAt, inputHashes, viewSha256 });
+    return { status: 'evaluated', runId, viewSha256, ...view.summary };
   });
 }
 
-function validateRunResult(input) {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('run result 必须是对象');
-  if (input.schemaVersion !== 1) throw new Error('run result schemaVersion 必须为 1');
-  if (typeof input.runId !== 'string' || input.runId.length === 0 || input.runId.length > 160) throw new Error('runId 无效');
-  if (!Number.isFinite(Date.parse(input.completedAt))) throw new Error('completedAt 无效');
-  if (!['no_change', 'updated', 'review_required'].includes(input.status)) throw new Error('run status 无效');
-  if (!Number.isInteger(input.recordsProcessed) || input.recordsProcessed < 0) throw new Error('recordsProcessed 无效');
-  if (!Number.isInteger(input.backlogRemaining) || input.backlogRemaining < 0) throw new Error('backlogRemaining 无效');
-  if (!input.sourceWatermarks || typeof input.sourceWatermarks !== 'object' || Array.isArray(input.sourceWatermarks)) throw new Error('sourceWatermarks 无效');
-  for (const [key, value] of Object.entries(input.sourceWatermarks)) {
-    if (!key || typeof value !== 'string' || value.length > 500) throw new Error('sourceWatermarks 条目无效');
-  }
-  return { ...input };
+async function verifyCurrentView(paths, view, expectedViewSha256 = null) {
+  await assertStateHashes(paths, view.inputHashes, 'evaluate');
+  const viewSha256 = sha256Text(canonicalStringify(view));
+  if (expectedViewSha256 && viewSha256 !== expectedViewSha256) throw new Error('current-view.json 与 active run 记录不匹配');
+  return viewSha256;
 }
 
-async function commandCompleteRun(stateDir, options) {
-  const inputPath = requiredOption(options, 'input');
+async function writeProposal(generatedDir, view, viewSha256) {
+  const proposal = renderProposal(view);
+  await fs.mkdir(generatedDir, { recursive: true, mode: 0o700 });
+  const runPart = view.runId ?? 'review';
+  const outputPath = path.join(generatedDir, `${view.generatedAt.slice(0, 10)}-${runPart}-${viewSha256.slice(0, 12)}-proposal.md`);
+  if (await pathExists(outputPath)) {
+    const existing = await fs.readFile(outputPath, 'utf8');
+    if (existing !== proposal) throw new Error(`同名提案已存在但内容不同：${outputPath}`);
+    return { status: 'existing', outputPath, proposalSha256: sha256Text(proposal), bytes: Buffer.byteLength(proposal, 'utf8') };
+  }
+  await fs.writeFile(outputPath, proposal, { mode: 0o600, flag: 'wx' });
+  return { status: 'rendered', outputPath, proposalSha256: sha256Text(proposal), bytes: Buffer.byteLength(proposal, 'utf8') };
+}
+
+async function commandRender(stateDir, generatedDir, options) {
   return withLock(stateDir, async () => {
     const { paths } = await loadState(stateDir);
-    const input = await readStructuredInput(inputPath);
-    if (input.length !== 1) throw new Error('complete-run 每次只接受一个运行结果');
-    const run = validateRunResult(input[0]);
     const view = await readJson(paths.currentView);
-    if (Date.parse(run.completedAt) < Date.parse(view.generatedAt)) throw new Error('completedAt 早于当前评价结果');
-    const previous = await readJson(paths.lastRun, { schemaVersion: 1, initialPreviewCompleted: false });
-    if (previous.runId === run.runId) {
-      const same = previous.completedAt === run.completedAt
-        && previous.status === run.status
-        && previous.recordsProcessed === run.recordsProcessed
-        && previous.backlogRemaining === run.backlogRemaining
-        && canonicalStringify(previous.sourceWatermarks) === canonicalStringify(run.sourceWatermarks);
-      if (!same) throw new Error(`runId 已存在但运行结果不同：${run.runId}`);
-      return { status: 'existing', runId: run.runId };
+    const active = await readJson(paths.activeRun, null);
+    if (active) {
+      const runId = validateRunId(requiredOption(options, 'run-id'));
+      if (active.runId !== runId || active.phase !== 'evaluated') throw new Error('render 需要匹配的 evaluated active run');
+      const viewSha256 = await verifyCurrentView(paths, view, active.viewSha256);
+      const rendered = await writeProposal(generatedDir, view, viewSha256);
+      await writeJsonAtomic(paths.activeRun, {
+        ...active,
+        phase: 'rendered',
+        renderedAt: new Date().toISOString(),
+        proposalPath: rendered.outputPath,
+        proposalSha256: rendered.proposalSha256,
+      });
+      return { ...rendered, runId };
     }
-    if (previous.completedAt && Date.parse(run.completedAt) <= Date.parse(previous.completedAt)) {
-      throw new Error('新的成功水位不能早于或等于上次成功运行');
+    const viewSha256 = await verifyCurrentView(paths, view);
+    return writeProposal(generatedDir, view, viewSha256);
+  });
+}
+
+async function commandCommitRun(stateDir, options) {
+  const runId = validateRunId(requiredOption(options, 'run-id'));
+  return withLock(stateDir, async () => {
+    const { paths } = await loadState(stateDir);
+    const runPath = path.join(paths.runs, `${runId}.json`);
+    const active = await readJson(paths.activeRun, null);
+    if (!active) {
+      if (await pathExists(runPath)) {
+        const archived = await readJson(runPath);
+        return { status: 'existing', runId, runStatus: archived.status };
+      }
+      throw new Error('commit-run 需要匹配的 rendered 或 committing active run');
+    }
+    if (active.runId !== runId || !['rendered', 'committing'].includes(active.phase)) {
+      throw new Error('commit-run 需要匹配的 rendered 或 committing active run');
+    }
+    const view = await readJson(paths.currentView);
+    const viewSha256 = await verifyCurrentView(paths, view, active.viewSha256);
+    if (!(await pathExists(active.proposalPath))) throw new Error('提案文件不存在，拒绝提交水位');
+    if (await sha256File(active.proposalPath) !== active.proposalSha256) throw new Error('提案文件已变化，拒绝提交水位');
+    const status = active.phase === 'committing'
+      ? active.status
+      : view.summary.actionable > 0 ? 'review_required' : 'no_change';
+    const completedAt = active.phase === 'committing' ? active.completedAt : new Date().toISOString();
+    const committing = active.phase === 'committing' ? active : {
+      ...active,
+      phase: 'committing',
+      status,
+      completedAt,
+      viewSha256,
+      summary: view.summary,
+    };
+    if (active.phase !== 'committing') await writeJsonAtomic(paths.activeRun, committing);
+    const completed = {
+      ...committing,
+      phase: 'committed',
+    };
+    if (await pathExists(runPath)) {
+      const archived = await readJson(runPath);
+      if (canonicalStringify(archived) !== canonicalStringify(completed)) throw new Error(`run archive 已存在但内容不同：${runId}`);
+    } else {
+      await writeJsonAtomic(runPath, completed);
     }
     await writeJsonAtomic(paths.lastRun, {
-      ...run,
-      initialPreviewCompleted: true,
-      lastEvaluatedAt: view.generatedAt,
+      schemaVersion: 2,
+      runId,
+      lastStatus: status,
+      completedAt,
+      recordsProcessed: committing.recordsProcessed,
+      recordsAccepted: committing.recordsAccepted,
+      sessionsScanned: committing.sessionsScanned,
+      backlogRemaining: committing.backlogRemaining,
+      coverageComplete: committing.coverageComplete,
+      sourceWatermarks: committing.sourceWatermarks,
+      sourceWatermarksTrust: 'declared',
+      viewSha256,
+      proposalSha256: committing.proposalSha256,
       summary: view.summary,
     });
-    return { status: 'completed', runId: run.runId, sourceWatermarks: run.sourceWatermarks };
-  });
-}
-
-async function commandRender(stateDir, generatedDir) {
-  return withLock(stateDir, async () => {
-    const { paths } = await loadState(stateDir);
-    const view = await readJson(paths.currentView);
-    const proposal = renderProposal(view);
-    await fs.mkdir(generatedDir, { recursive: true, mode: 0o700 });
-    const outputPath = path.join(generatedDir, `${view.generatedAt.slice(0, 10)}-${safeTimestamp(view.generatedAt)}-proposal.md`);
-    if (await pathExists(outputPath)) {
-      const existing = await fs.readFile(outputPath, 'utf8');
-      if (existing !== proposal) throw new Error(`同名提案已存在但内容不同：${outputPath}`);
-      return { status: 'existing', outputPath, bytes: Buffer.byteLength(proposal, 'utf8') };
-    }
-    await fs.writeFile(outputPath, proposal, { mode: 0o600, flag: 'wx' });
-    return { status: 'rendered', outputPath, bytes: Buffer.byteLength(proposal, 'utf8') };
+    await fs.rm(paths.activeRun);
+    return {
+      status: 'committed',
+      runId,
+      runStatus: status,
+      recordsProcessed: committing.recordsProcessed,
+      backlogRemaining: committing.backlogRemaining,
+      coverageComplete: committing.coverageComplete,
+      sourceWatermarks: committing.sourceWatermarks,
+      sourceWatermarksTrust: 'declared',
+    };
   });
 }
 
 async function commandDecide(stateDir, options) {
   const inputPath = requiredOption(options, 'input');
   return withLock(stateDir, async () => {
-    const { paths } = await loadState(stateDir);
+    const { paths, config } = await loadState(stateDir);
+    if (await pathExists(paths.activeRun)) throw new Error('存在 active run；先完成或显式 abort-run，再记录前台审核');
     const input = await readStructuredInput(inputPath);
     if (input.length !== 1) throw new Error('decide 每次只接受一个决定');
     const decision = validateDecision(input[0]);
-    const candidates = await readJsonl(paths.candidates);
-    if (!candidates.map(validateObservation).some((item) => item.candidateId === decision.candidateId)) throw new Error('决定引用的 candidateId 不存在');
+    const view = await readJson(paths.currentView);
     const decisions = await readJsonl(paths.decisions);
-    const existingDecision = decisions.map((item) => validateDecision(item, { allowApplied: true })).find((item) => item.id === decision.id);
-    if (existingDecision) {
-      if (canonicalStringify(existingDecision) !== canonicalStringify(decision)) throw new Error(`决定 ID 冲突且内容不同：${decision.id}`);
-      return { status: 'duplicate', decisionId: decision.id };
+    const existing = decisions.find((item) => item.id === decision.id);
+    if (existing) {
+      if (canonicalStringify(existing) !== canonicalStringify(decision)) throw new Error(`决定 ID 冲突且内容不同：${decision.id}`);
+      const observations = await readJsonl(paths.observations);
+      const inputHashes = await hashStateInputs(paths);
+      const asOfMs = Math.max(Date.parse(view.generatedAt), Date.parse(decision.decidedAt));
+      const reconciledView = evaluateCandidates({
+        observations,
+        decisions,
+        config,
+        asOf: new Date(asOfMs).toISOString(),
+        runId: view.runId,
+        inputHashes,
+      });
+      await writeJsonAtomic(paths.currentView, reconciledView);
+      const reconciled = reconciledView.candidates.find((item) => item.id === decision.candidateId);
+      return { status: 'duplicate', decisionId: decision.id, candidateStatus: reconciled?.status ?? null };
     }
-    await appendJsonl(paths.decisions, [decision]);
-    return { status: 'recorded', decisionId: decision.id, action: decision.action };
+    await verifyCurrentView(paths, view);
+    const candidate = view.candidates.find((item) => item.id === decision.candidateId);
+    if (!candidate) throw new Error('决定引用的 candidateId 不存在');
+    if (candidate.proposalRevision !== decision.proposalRevision
+      || candidate.candidateContentHash !== decision.candidateContentHash) {
+      throw new Error('决定绑定的 proposal revision 或 candidate content hash 已过期');
+    }
+    if (['accept', 'edit'].includes(decision.action)
+      && !['proposal_pending_review', 'external_modified'].includes(candidate.status)) {
+      throw new Error(`当前候选状态 ${candidate.status} 不允许 ${decision.action}`);
+    }
+    if (decision.action === 'applied_external' && candidate.status !== 'approved_external_pending_apply') {
+      throw new Error('applied_external 只能记录已批准且等待外部应用的候选');
+    }
+    if (decision.action === 'unsuppress' && candidate.status !== 'suppressed') {
+      throw new Error('unsuppress 只能用于 suppressed 候选');
+    }
+    if (decision.action === 'suppress' && candidate.status === 'suppressed') {
+      throw new Error('候选已经处于 suppressed 状态');
+    }
+    await writeJsonlAtomic(paths.decisions, [...decisions, decision]);
+    const observations = await readJsonl(paths.observations);
+    const inputHashes = await hashStateInputs(paths);
+    const asOfMs = Math.max(Date.parse(view.generatedAt), Date.parse(decision.decidedAt));
+    const updatedView = evaluateCandidates({
+      observations,
+      decisions: [...decisions, decision],
+      config,
+      asOf: new Date(asOfMs).toISOString(),
+      runId: view.runId,
+      inputHashes,
+    });
+    await writeJsonAtomic(paths.currentView, updatedView);
+    const updated = updatedView.candidates.find((item) => item.id === decision.candidateId);
+    return { status: 'recorded', decisionId: decision.id, action: decision.action, candidateStatus: updated.status };
   });
 }
 
-async function commandApplyUser(stateDir, options) {
-  const targetPath = requiredOption(options, 'target');
-  const expectedSha256 = requiredOption(options, 'expected-sha256');
-  const baselineReviewPath = requiredOption(options, 'baseline-review');
+async function commandAbortRun(stateDir, options) {
+  const runId = validateRunId(requiredOption(options, 'run-id'));
+  const reason = requiredOption(options, 'reason');
+  if (reason.length > 500) throw new Error('reason 过长');
   return withLock(stateDir, async () => {
-    const { paths, config } = await loadState(stateDir);
-    if (path.resolve(targetPath) !== path.resolve(config.integration.targets.userPreference)) {
-      throw new Error('apply-user 目标不等于当前 OpenClaw 集成声明的 USER.md');
-    }
-    if (options.apply && !config.autoApplyUserPreferences) throw new Error('config 禁止自动应用用户偏好');
-    const view = await readJson(paths.currentView);
-    const baselineReview = await readJson(baselineReviewPath);
-    return applyUserManagedSection({
-      stateDir,
-      targetPath,
-      expectedSha256,
-      config,
-      view,
-      baselineReview,
-      apply: Boolean(options.apply),
-    });
+    const { paths } = await loadState(stateDir);
+    const active = await readJson(paths.activeRun, null);
+    if (!active || active.runId !== runId) throw new Error('没有匹配的 active run');
+    const runPath = path.join(paths.runs, `${runId}.aborted.${safeTimestamp()}.json`);
+    await writeJsonAtomic(runPath, { ...active, phase: 'aborted', abortedAt: new Date().toISOString(), reason });
+    await fs.rm(paths.activeRun);
+    return { status: 'aborted', runId, runPath };
   });
 }
 
 async function commandStatus(stateDir) {
-  const { paths } = await loadState(stateDir);
-  const [lastRun, view, applyState, observations, decisions] = await Promise.all([
+  const { paths, config } = await loadState(stateDir);
+  const [lastRun, activeRun, view, observations, decisions, lock] = await Promise.all([
     readJson(paths.lastRun, null),
+    readJson(paths.activeRun, null),
     readJson(paths.currentView, null),
-    readJson(paths.applyState, null),
-    readJsonl(paths.candidates),
+    readJsonl(paths.observations),
     readJsonl(paths.decisions),
+    inspectLock(stateDir),
   ]);
   return {
-    status: lastRun?.lastStatus ?? 'initialized',
+    status: activeRun ? `active:${activeRun.phase}` : (lastRun?.lastStatus ?? 'initialized'),
+    mode: config.mode,
+    evidenceTrust: 'declared',
     stateDir,
+    userAllowlistConfigured: config.integration.allowedUserIds.length > 0,
     observations: observations.length,
     decisions: decisions.length,
+    activeRun,
     lastRun,
     currentSummary: view?.summary ?? null,
-    lastAppliedAt: applyState?.appliedAt ?? null,
-    lastAppliedTargetSha256: applyState?.afterSha256 ?? null,
+    lock,
+    legacyStateDetected: await pathExists(paths.legacyCandidates)
+      || await pathExists(paths.legacyApplyState)
+      || await pathExists(paths.legacyApplyPending),
   };
+}
+
+async function commandRecoverLock(stateDir, options) {
+  const expectedSha256 = requiredOption(options, 'expected-sha256');
+  const { config } = await loadState(stateDir);
+  const minAgeSeconds = options['min-age-seconds'] === undefined
+    ? config.staleLockMinAgeSeconds
+    : Number(options['min-age-seconds']);
+  if (!Number.isInteger(minAgeSeconds) || minAgeSeconds <= 0) throw new Error('min-age-seconds 必须是正整数');
+  return recoverStaleLock(stateDir, { expectedSha256, minAgeSeconds });
 }
 
 const { command, options } = parseArgs(process.argv.slice(2));
@@ -320,15 +541,17 @@ const generatedDir = path.resolve(String(options['generated-dir'] ?? process.env
 try {
   let result;
   if (command === 'init') result = await commandInit(stateDir);
-  else if (command === 'ingest') result = await commandIngest(stateDir, options);
+  else if (command === 'begin-run') result = await commandBeginRun(stateDir, options);
+  else if (command === 'collect') result = await commandCollect(stateDir, options);
   else if (command === 'evaluate') result = await commandEvaluate(stateDir, options);
-  else if (command === 'complete-run') result = await commandCompleteRun(stateDir, options);
-  else if (command === 'render') result = await commandRender(stateDir, generatedDir);
+  else if (command === 'render') result = await commandRender(stateDir, generatedDir, options);
+  else if (command === 'commit-run') result = await commandCommitRun(stateDir, options);
   else if (command === 'decide') result = await commandDecide(stateDir, options);
-  else if (command === 'apply-user') result = await commandApplyUser(stateDir, options);
+  else if (command === 'abort-run') result = await commandAbortRun(stateDir, options);
   else if (command === 'status') result = await commandStatus(stateDir);
-  else if (command === 'hash') result = { targetPath: requiredOption(options, 'target'), sha256: await sha256File(requiredOption(options, 'target')) };
-  else throw new Error('用法：profile-curator.mjs <init|ingest|evaluate|render|complete-run|decide|apply-user|status|hash> [options]');
+  else if (command === 'lock-status') result = await inspectLock(stateDir);
+  else if (command === 'recover-lock') result = await commandRecoverLock(stateDir, options);
+  else throw new Error('用法：profile-curator.mjs <init|begin-run|collect|evaluate|render|commit-run|decide|abort-run|status|lock-status|recover-lock> [options]');
   output(result);
 } catch (error) {
   process.stderr.write(`${JSON.stringify({ status: 'failed', error: error.message }, null, 2)}\n`);

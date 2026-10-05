@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 2,
+  "integration": "openclaw",
+  "integrationVersion": "1.1.0",
+  "validatedHostBaseline": "2026.9.5",
+  "mode": "proposal_only",
+  "agentAllowlist": [
+    "main"
+  ],
+  "chatScopeAllowlist": [
+    "direct"
+  ],
+  "userAllowlistRequired": true,
+  "evidenceAccess": {
+    "requiredTools": [
+      "sessions_list",
+      "sessions_history"
+    ],
+    "supplementalTools": [
+      "memory_search",
+      "memory_get",
+      "sessions_search"
+    ],
+    "directTranscriptDatabaseAccess": false,
+    "currentTrust": "declared",
+    "hostAttestationAvailable": false
+  },
+  "semanticTargets": {
+    "user_preference": {
+      "resolver": "external-review",
+      "mode": "proposal-only"
+    },
+    "agent_method": {
+      "resolver": "external-review",
+      "mode": "proposal-only"
+    },
+    "persona_self": {
+      "resolver": "openclaw-persona-target",
+      "mode": "proposal-only"
+    }
+  },
+  "stateDirectory": "/root/.openclaw/workspace/state/profile-curator",
+  "generatedDirectory": "/root/.openclaw/workspace/generated/profile-curator",
+  "automation": {
+    "provider": "gateway",
+    "defaultCadence": "weekly",
+    "sessionTarget": "isolated",
+    "finiteRun": true,
+    "startsDaemon": false
+  }
+}

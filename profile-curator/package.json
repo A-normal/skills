@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node --check scripts/profile-curator.mjs",
+    "check": "node --check scripts/profile-curator.mjs && node --check scripts/lib/engine.mjs && node --check scripts/lib/render.mjs && node --check scripts/lib/state.mjs",
     "test": "node --test"
   }
 }

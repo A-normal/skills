@@ -1,7 +1,7 @@
 {
   "jobs": [
     {
-      "name": "profile-curator-weekly",
+      "name": "profile-curator-weekly-shadow",
       "schedule": {
         "kind": "cron",
         "expr": "0 10 * * 0",
@@ -10,7 +10,7 @@
       "sessionTarget": "isolated",
       "payload": {
         "kind": "agentTurn",
-        "message": "读取 /root/.openclaw/agents/main/agent/workshop-skills/profile-curator/SKILL.md，执行一轮有限的每周画像整理。只使用 OpenClaw 受控 memory/session 检索能力，不直接读取数据库。首次运行只预览；后续按最后成功水位增量处理。模型只提取脱敏观察，晋升、冲突和计数必须由 Skill 的确定性脚本完成。只有满足严格证据、安全写入、版本检查、备份和验证条件的 USER.md 受管区块可以自动应用；AGENTS、SOUL、IDENTITY 和任何 Skill 永远只生成提案。只有整轮成功后才运行 complete-run 提交来源水位；任何步骤失败都保留旧水位。没有重要变化时静默，完成后退出。",
+        "message": "读取 /root/.openclaw/agents/main/agent/workshop-skills/profile-curator/SKILL.md，执行一轮有限的每周 proposal-only 画像整理。只处理配置 allowlist 中 main agent、direct chat 和指定 user ID。先用 sessions_list 枚举，再用 sessions_history 从每个 session 的最后成功声明水位读取；memory/search 工具只能辅助定位。所有 envelope 标记 declared，不得声称来源已认证。按 begin-run、collect、evaluate、render、commit-run 顺序执行；中途失败不得提交水位。禁止运行 decide，禁止修改 USER.md、AGENTS.md、SOUL.md、IDENTITY.md 或任何 Skill。无变化时静默，有新提案或失败时在本轮结果中给出摘要和路径，随后退出。",
         "timeoutSeconds": 1800
       },
       "delivery": {

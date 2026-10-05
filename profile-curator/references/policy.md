@@ -1,80 +1,62 @@
-# 分类、晋升与冲突策略
+# 分类、提案与冲突策略
 
-## 权威关系
+## 权威与信任
 
-- 顶层用户消息和用户审核操作可以产生新的明确证据。
+- 顶层、未引用、未转发的用户消息可以支持用户偏好、明确要求和审核意见。
 - `USER.md`、`AGENTS.md`、`SOUL.md` 是当前行为基线，不是新证据。
-- Curator 生成的摘要、候选、提案和日志不能反过来增加证据权重。
-- 工具结果只有在能够验证真实执行结果时，才可支持 `agent_method`。
-- Dreaming、Assistant 自述和无外部佐证的反思只能作为非权威反思材料。
+- Curator 的摘要、候选、提案和日志不能反过来增加证据权重。
+- v1.1 的 OpenClaw envelope 全部是 `declared`：CLI 能验证结构、一致性和去重，不能验证来源真实性。
+- 所有类别只生成提案。正式文档修改由外部前台流程完成。
 
-## 三类语义目标
+## user_preference
 
-### user_preference
+- 所有证据都必须来自 allowlist direct 会话中的顶层 user 消息。
+- Assistant、Tool、quoted、forwarded 或非顶层内容不能建立或支持用户偏好。
+- 明确长期声明单次可形成提案；推断偏好需在最近 90 天内至少三个独立 session 支持。
+- 同一 source event 对同一 candidate 只计一次。
+- 受控 taxonomy 外的内容使用 `other.review_only/manual`，只作自由文本审核提案。
 
-用户稳定的沟通偏好、默认行为和习惯。
+## agent_method
 
-- 明确长期声明必须来自顶层用户消息或用户审核操作，且不能是引用内容。
-- 明确长期声明单次即可取得自动应用资格。
-- 推断偏好必须在最近 90 天内得到至少三个独立会话支持。
-- 同一会话内重复表达只计一次。
-- 一次性任务约束不得晋升。
-- 现有正式规则长期没有出现，不得仅因时间流逝自动删除。
+- 明确用户要求可单次形成提案；普通方法需两个独立 session。
+- 安全、权限、数据损坏或不可逆风险的单次 Tool `verified_outcome` 可以形成提案。
+- Assistant 自述只能作为 `assistant_reflection + uncertain`，不计入门槛。
+- 不自动修改 AGENTS.md 或任何 Skill。
 
-### agent_method
+## persona_self
 
-Agent 的稳定工作方法、工程规则和复盘结论。
+- 必须包含声明的人格目标绝对路径与当前 SHA-256；这仍不是宿主证明。
+- 普通人格变化需两个独立 session；明确用户审核可单次形成提案。
+- Assistant 反思只能作为 `assistant_reflection + uncertain` 的非权威反思记录。
+- 不自动修改 SOUL.md 或其他人格文件。
 
-- 明确长期要求可单次形成提案。
-- 普通方法至少需要两个独立会话或结果事件。
-- 安全、权限、数据损坏或不可逆风险的单次已验证严重事件可以形成提案。
-- 永远不自动修改 `AGENTS.md` 或任何 Skill。
-- 如果测试、权限或类型系统已经可靠强制该规则，默认不再追加自然语言约束。
+## 候选与正文
 
-### persona_self
+- candidate ID 来自类别、受控 topic/value、scope 和人格目标路径；未知偏好额外绑定初始 claim 哈希。
+- observation ID 来自 source event 与 candidate，调用方不能自选 ID。
+- candidate 的 canonical claim 取最早建立候选的 observation。后续 support 只增加证据，不能替换正文。
+- `edit` 产生当前审核 revision 的显示文本，不改写历史 canonical claim。
 
-工具所管理人格的稳定表达方式、价值取向和关系边界。
+## 冲突和时间
 
-- 必须有工具提供的 `personaTargetRef`。
-- 普通人格变化至少需要两个独立会话；明确用户审核可直接形成提案。
-- 反思可以自动生成，但只进入非权威提案或反思记录。
-- `SOUL.md` 的任何语义修改必须由外部前台流程明确审核。
-- 人格叙事不得包装成关于用户的客观事实。
+- 同一类别、topic、scope、人格路径下的不同 value 构成冲突组。
+- 只有推断证据时全部暂停；更新的明确长期声明可以取代旧推断。
+- 推断证据只在滚动 90 天窗口内计数。窗口外记录保留审计，不自动删除。
+- `assistant_reflection` 不参与 session 门槛。
+- 超出配置偏差的未来时间一律拒绝。
 
-## 候选关系
+## 审核状态
 
-每条观察只能声明以下一种关系：
+| 动作 | 状态 | 后续 |
+| --- | --- | --- |
+| `accept` | `approved_external_pending_apply` | 持续显示，等待外部应用 |
+| `edit` | `approved_external_pending_apply` | 显示 replacement claim，等待外部应用 |
+| `reject` | `rejected_revision` | 只拒绝当前 revision；新证据可重开 |
+| `defer` | `deferred` | 到期或新 revision 后重开 |
+| `suppress` | `suppressed` | 跨 revision 持续，直到 `unsuppress` |
+| `unsuppress` | 恢复确定性评价状态 | 不等同于接受 |
+| `applied_external` | `applied_external` | 仅记录外部流程已经应用 |
+| `external_modified` | `external_modified` | 外部内容优先，继续提示核对 |
+| `supersede` | `superseded` | 外部流程声明候选已被取代 |
 
-- `supports`：与现有候选含义相同，可以增加独立会话计数。
-- `contradicts`：在相同作用域下提供反例。
-- `related`：相关但不等价，不合并计数。
-- `new_candidate`：建立新候选。
-- `uncertain`：无法可靠归类；保持独立且不自动晋升。
-
-候选使用 `category + topicKey + valueKey + scope + personaTargetRef` 生成稳定 ID。宁可建立多个相近候选，也不要宽松合并。
-
-## 冲突
-
-- 同一 `category + topicKey + scope + personaTargetRef` 下出现多个不同 `valueKey` 时，视为同一冲突组。
-- 如果只有推断证据，组内所有候选停止晋升。
-- 后出现的明确长期声明可以取代同作用域的旧值。
-- 推断证据不能覆盖明确声明。
-- 无法拆分作用域的冲突进入审核提案；正式文档保持当前安全基线。
-- 历史证据保留用于审计，旧规则标记为 `superseded`，不得从审计记录删除。
-
-## 时间与 dormant
-
-- v1 不使用连续置信度衰减，也不自动归档候选。
-- 只有最近 90 天内的推断证据参与晋升计数。
-- 窗口外证据仍保留，但只用于审计。
-- 没有近期证据且未正式应用的候选动态显示为 `dormant`。
-- 新观察可以使候选重新活跃，但窗口外证据不会因此重新计入晋升。
-
-## 决策
-
-前台审核支持：`accept`、`edit`、`reject`、`suppress`、`defer`、`supersede`、`external_modified`。
-
-- `reject` 只拒绝当前提案；新的独立证据仍可建立新提案。
-- `suppress` 阻止同一候选再次提示，直到用户明确解除或编辑。
-- `external_modified` 表示正式文档被外部修改；外部内容优先，Curator 不得自动恢复旧规则。
-- `applied` 只能由受控应用脚本记录。
+除 `suppress/unsuppress/supersede` 的候选级语义外，决定只作用于绑定的 proposal revision 与 candidate content hash。
