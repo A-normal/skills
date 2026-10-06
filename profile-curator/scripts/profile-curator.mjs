@@ -145,6 +145,7 @@ async function commandBeginRun(stateDir, options) {
   return withLock(stateDir, async () => {
     const { paths, config } = await loadState(stateDir);
     if (config.integration.allowedUserIds.length === 0) throw new Error('先在 config.json 中配置 allowedUserIds');
+    if (config.integration.allowedChannels.length === 0) throw new Error('先在 config.json 中配置 allowedChannels');
     if (await pathExists(paths.activeRun)) {
       const active = await readJson(paths.activeRun);
       throw new Error(`已有未完成运行：${active.runId}`);
@@ -248,7 +249,10 @@ async function commandCollect(stateDir, options) {
     }
     await writeJsonlAtomic(paths.observations, [...existingRaw, ...accepted]);
     const collectionStateHashes = await hashStateInputs(paths);
-    const sourceWatermarks = Object.fromEntries(receipt.sessions.map((item) => [item.sessionId, item.observedThroughMessageId]));
+    const sourceWatermarks = Object.fromEntries(receipt.sessions.map((item) => [
+      item.sessionId,
+      item.complete ? item.observedThroughMessageId : item.previousWatermark,
+    ]));
     const nextActive = {
       ...active,
       phase: 'collected',
@@ -357,6 +361,9 @@ async function commandCommitRun(stateDir, options) {
     }
     if (active.runId !== runId || !['rendered', 'committing'].includes(active.phase)) {
       throw new Error('commit-run 需要匹配的 rendered 或 committing active run');
+    }
+    if (!Number.isInteger(active.sessionsScanned) || active.sessionsScanned <= 0) {
+      throw new Error('commit-run 拒绝提交 sessionsScanned=0 的空覆盖运行');
     }
     const view = await readJson(paths.currentView);
     const viewSha256 = await verifyCurrentView(paths, view, active.viewSha256);

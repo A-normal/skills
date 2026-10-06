@@ -29,6 +29,7 @@ const skillDir = path.resolve(testDir, '..');
 const defaultConfigPath = path.join(skillDir, 'references', 'default-config.json');
 const defaultConfig = JSON.parse(await fs.readFile(defaultConfigPath, 'utf8'));
 const config = structuredClone(defaultConfig);
+config.integration.allowedChannels = ['telegram'];
 config.integration.allowedUserIds = ['user-1'];
 
 const FIXED_AS_OF = '2026-10-05T12:00:00.000Z';
@@ -40,7 +41,7 @@ function rawObservation({
   claim = '默认先给结论并保持简洁',
   scope = 'communication',
   sessionId = 'session-1',
-  sessionKey = `key-${sessionId}`,
+  sessionKey,
   messageId = `message-${sessionId}`,
   occurredAt = '2026-10-01T00:00:00.000Z',
   sourceType = 'inferred_behavior',
@@ -74,7 +75,7 @@ function rawObservation({
       chatScope: 'direct',
       userId,
       sessionId,
-      sessionKey,
+      sessionKey: sessionKey ?? `agent:main:telegram:direct:${userId}`,
       messageId,
       occurredAt,
       role,
@@ -275,12 +276,18 @@ test('collection receipt 强制 main/direct/user allowlist 和 declared trust', 
     host: 'openclaw',
     hostVersion: '2026.9.5',
     sessions: [{
-      sessionId: 's1', sessionKey: 'k1', agentId: 'main', chatScope: 'direct', userId: 'user-1',
-      previousWatermark: null, observedThroughMessageId: 'm1', backlogRemaining: 0, complete: true,
+      sessionId: 's1', sessionKey: 'agent:main:telegram:direct:user-1', agentId: 'main', channel: 'telegram',
+      chatScope: 'direct', userId: 'user-1', createdActorId: 'user-1', previousWatermark: null,
+      observedThroughMessageId: 'm1', backlogRemaining: 0, complete: true, historyTruncated: false,
+      droppedMessages: false, contentTruncated: false, contentRedacted: false,
     }],
   };
   assert.equal(validateCollectionReceipt(receipt, config, { now: FIXED_AS_OF }).sessions.length, 1);
+  assert.throws(() => validateCollectionReceipt({ ...receipt, sessions: [] }, config, { now: FIXED_AS_OF }), /不能为空/u);
   assert.throws(() => validateCollectionReceipt({ ...receipt, sessions: [{ ...receipt.sessions[0], userId: 'other' }] }, config, { now: FIXED_AS_OF }), /allowlist/u);
+  assert.throws(() => validateCollectionReceipt({ ...receipt, sessions: [{ ...receipt.sessions[0], channel: 'feishu' }] }, config, { now: FIXED_AS_OF }), /channel 不在 allowlist/u);
+  assert.throws(() => validateCollectionReceipt({ ...receipt, sessions: [{ ...receipt.sessions[0], createdActorId: 'other' }] }, config, { now: FIXED_AS_OF }), /createdActorId/u);
+  assert.throws(() => validateCollectionReceipt({ ...receipt, sessions: [{ ...receipt.sessions[0], contentTruncated: true }] }, config, { now: FIXED_AS_OF }), /内容截断/u);
   assert.throws(() => validateCollectionReceipt({ ...receipt, trust: 'host_attested' }, config, { now: FIXED_AS_OF }), /host_attested/u);
 });
 
@@ -306,6 +313,7 @@ test('CLI 完成 begin/collect/evaluate/render/commit 且由代码计算水位',
     assert.equal(run('init').mode, 'proposal_only');
     const paths = statePaths(stateDir);
     const localConfig = await readJson(paths.config);
+    localConfig.integration.allowedChannels = ['telegram'];
     localConfig.integration.allowedUserIds = ['user-1'];
     await writeJsonAtomic(paths.config, localConfig);
     const raw = rawObservation({ occurredAt: observedAt, sourceType: 'explicit_long_term_statement' });
@@ -318,8 +326,10 @@ test('CLI 完成 begin/collect/evaluate/render/commit 且由代码计算水位',
       host: 'openclaw',
       hostVersion: '2026.9.5',
       sessions: [{
-        sessionId: 'session-1', sessionKey: 'key-session-1', agentId: 'main', chatScope: 'direct', userId: 'user-1',
-        previousWatermark: null, observedThroughMessageId: 'message-session-1', backlogRemaining: 2, complete: false,
+        sessionId: 'session-1', sessionKey: 'agent:main:telegram:direct:user-1', agentId: 'main', channel: 'telegram',
+        chatScope: 'direct', userId: 'user-1', createdActorId: 'user-1', previousWatermark: null,
+        observedThroughMessageId: 'message-session-1', backlogRemaining: 2, complete: false, historyTruncated: true,
+        droppedMessages: false, contentTruncated: false, contentRedacted: false,
       }],
     }, null, 2)}\n`);
     assert.equal(run('begin-run', '--run-id', 'run-1', '--started-at', startedAt).status, 'begun');
@@ -329,10 +339,16 @@ test('CLI 完成 begin/collect/evaluate/render/commit 且由代码计算水位',
     assert.equal(run('evaluate', '--run-id', 'run-1').status, 'evaluated');
     const rendered = run('render', '--run-id', 'run-1');
     assert.equal(rendered.status, 'rendered');
+    const activeBeforeCommit = await readJson(paths.activeRun);
+    await writeJsonAtomic(paths.activeRun, { ...activeBeforeCommit, sessionsScanned: 0 });
+    const emptyCommit = runRaw('commit-run', '--run-id', 'run-1');
+    assert.notEqual(emptyCommit.status, 0);
+    assert.match(emptyCommit.stderr, /sessionsScanned=0/u);
+    await writeJsonAtomic(paths.activeRun, activeBeforeCommit);
     const committed = run('commit-run', '--run-id', 'run-1');
     assert.equal(committed.recordsProcessed, 2);
     assert.equal(committed.backlogRemaining, 2);
-    assert.equal(committed.sourceWatermarks['session-1'], 'message-session-1');
+    assert.equal(committed.sourceWatermarks['session-1'], null);
     assert.equal(committed.sourceWatermarksTrust, 'declared');
     assert.equal(await fs.readFile(path.join(stateDir, 'active-run.json'), 'utf8').catch((error) => error.code), 'ENOENT');
     assert.equal(run('commit-run', '--run-id', 'run-1').status, 'existing');
@@ -376,6 +392,7 @@ test('evaluate 后 observations 漂移会使 render 失败', async () => {
     run('init');
     const paths = statePaths(stateDir);
     const localConfig = await readJson(paths.config);
+    localConfig.integration.allowedChannels = ['telegram'];
     localConfig.integration.allowedUserIds = ['user-1'];
     await writeJsonAtomic(paths.config, localConfig);
     const occurredAt = new Date(now - 120000).toISOString();
@@ -385,8 +402,10 @@ test('evaluate 后 observations 漂移会使 render 失败', async () => {
     await fs.writeFile(receiptPath, JSON.stringify({
       schemaVersion: 2, runId: 'drift-run', collectedAt, trust: 'declared', host: 'openclaw', hostVersion: '2026.9.5',
       sessions: [{
-        sessionId: 'session-1', sessionKey: 'key-session-1', agentId: 'main', chatScope: 'direct', userId: 'user-1',
-        previousWatermark: null, observedThroughMessageId: 'message-session-1', backlogRemaining: 0, complete: true,
+        sessionId: 'session-1', sessionKey: 'agent:main:telegram:direct:user-1', agentId: 'main', channel: 'telegram',
+        chatScope: 'direct', userId: 'user-1', createdActorId: 'user-1', previousWatermark: null,
+        observedThroughMessageId: 'message-session-1', backlogRemaining: 0, complete: true, historyTruncated: false,
+        droppedMessages: false, contentTruncated: false, contentRedacted: false,
       }],
     }));
     run('begin-run', '--run-id', 'drift-run', '--started-at', new Date(now - 180000).toISOString());

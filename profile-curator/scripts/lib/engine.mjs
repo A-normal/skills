@@ -92,7 +92,7 @@ export function validateConfig(input) {
 
   const integrationKeys = [
     'host', 'validatedHostBaseline', 'requiredTools', 'supplementalTools',
-    'allowedAgents', 'allowedChatScopes', 'allowedUserIds',
+    'allowedAgents', 'allowedChatScopes', 'allowedChannels', 'allowedUserIds',
   ];
   assertExactKeys(input.integration, integrationKeys, integrationKeys, 'config.integration');
   if (input.integration.host !== 'openclaw') throw new Error('v1.1 只支持 OpenClaw');
@@ -104,6 +104,7 @@ export function validateConfig(input) {
   uniqueStrings(input.integration.supplementalTools, 'config.integration.supplementalTools', 20);
   uniqueStrings(input.integration.allowedAgents, 'config.integration.allowedAgents', 20);
   uniqueStrings(input.integration.allowedChatScopes, 'config.integration.allowedChatScopes', 20);
+  uniqueStrings(input.integration.allowedChannels, 'config.integration.allowedChannels', 20);
   uniqueStrings(input.integration.allowedUserIds, 'config.integration.allowedUserIds', 100);
   if (!input.integration.allowedChatScopes.every((item) => item === 'direct')) throw new Error('v1.1 只允许 direct chat scope');
 
@@ -173,30 +174,54 @@ export function validateCollectionReceipt(input, config, { now = new Date().toIS
     throw new Error(`collection receipt sessions 超过 ${config.initialBackfillMaxSessions} 项`);
   }
   if (config.integration.allowedUserIds.length === 0) throw new Error('config.integration.allowedUserIds 为空，拒绝采集');
+  if (config.integration.allowedChannels.length === 0) throw new Error('config.integration.allowedChannels 为空，拒绝采集');
+  if (input.sessions.length === 0) throw new Error('collection receipt sessions 不能为空');
   const seen = new Set();
   const sessions = input.sessions.map((session, index) => {
     const field = `collection receipt sessions[${index}]`;
     const keys = [
-      'sessionId', 'sessionKey', 'agentId', 'chatScope', 'userId', 'previousWatermark',
-      'observedThroughMessageId', 'backlogRemaining', 'complete',
+      'sessionId', 'sessionKey', 'agentId', 'channel', 'chatScope', 'userId', 'createdActorId',
+      'previousWatermark', 'observedThroughMessageId', 'backlogRemaining', 'complete',
+      'historyTruncated', 'droppedMessages', 'contentTruncated', 'contentRedacted',
     ];
     assertExactKeys(session, keys, keys, field);
     const normalized = {
       sessionId: requiredString(session.sessionId, `${field}.sessionId`, 300),
       sessionKey: requiredString(session.sessionKey, `${field}.sessionKey`, 300),
       agentId: requiredString(session.agentId, `${field}.agentId`, 160),
+      channel: requiredString(session.channel, `${field}.channel`, 80),
       chatScope: requiredString(session.chatScope, `${field}.chatScope`, 80),
       userId: requiredString(session.userId, `${field}.userId`, 300),
+      createdActorId: requiredString(session.createdActorId, `${field}.createdActorId`, 300),
       previousWatermark: session.previousWatermark === null ? null : requiredString(session.previousWatermark, `${field}.previousWatermark`, 500),
       observedThroughMessageId: requiredString(session.observedThroughMessageId, `${field}.observedThroughMessageId`, 500),
       backlogRemaining: session.backlogRemaining,
       complete: session.complete,
+      historyTruncated: session.historyTruncated,
+      droppedMessages: session.droppedMessages,
+      contentTruncated: session.contentTruncated,
+      contentRedacted: session.contentRedacted,
     };
     if (!Number.isInteger(normalized.backlogRemaining) || normalized.backlogRemaining < 0) throw new Error(`${field}.backlogRemaining 无效`);
-    if (typeof normalized.complete !== 'boolean') throw new Error(`${field}.complete 必须是布尔值`);
+    for (const key of ['complete', 'historyTruncated', 'droppedMessages', 'contentTruncated', 'contentRedacted']) {
+      if (typeof normalized[key] !== 'boolean') throw new Error(`${field}.${key} 必须是布尔值`);
+    }
     if (!config.integration.allowedAgents.includes(normalized.agentId)) throw new Error(`${field}.agentId 不在 allowlist`);
+    if (!config.integration.allowedChannels.includes(normalized.channel)) throw new Error(`${field}.channel 不在 allowlist`);
     if (!config.integration.allowedChatScopes.includes(normalized.chatScope)) throw new Error(`${field}.chatScope 不在 allowlist`);
     if (!config.integration.allowedUserIds.includes(normalized.userId)) throw new Error(`${field}.userId 不在 allowlist`);
+    if (normalized.createdActorId !== normalized.userId) throw new Error(`${field}.createdActorId 与 userId 不匹配`);
+    const expectedSessionKey = `agent:${normalized.agentId}:${normalized.channel}:${normalized.chatScope}:${normalized.userId}`;
+    if (normalized.sessionKey !== expectedSessionKey) throw new Error(`${field}.sessionKey 与 agent/channel/scope/user 不匹配`);
+    if (normalized.droppedMessages || normalized.contentTruncated || normalized.contentRedacted) {
+      throw new Error(`${field} 历史包含丢失、内容截断或脱敏，拒绝采集和推进水位`);
+    }
+    if (normalized.complete && (normalized.historyTruncated || normalized.backlogRemaining !== 0)) {
+      throw new Error(`${field}.complete 与 historyTruncated/backlogRemaining 矛盾`);
+    }
+    if (!normalized.complete && !normalized.historyTruncated && normalized.backlogRemaining === 0) {
+      throw new Error(`${field} 声明不完整但未声明截断或 backlog`);
+    }
     if (seen.has(normalized.sessionId)) throw new Error(`collection receipt 包含重复 sessionId：${normalized.sessionId}`);
     seen.add(normalized.sessionId);
     return normalized;

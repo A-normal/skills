@@ -23,18 +23,24 @@
       "sessionId": "opaque-session-id",
       "sessionKey": "opaque-session-key",
       "agentId": "main",
+      "channel": "telegram",
       "chatScope": "direct",
       "userId": "configured-user-id",
+      "createdActorId": "configured-user-id",
       "previousWatermark": null,
       "observedThroughMessageId": "opaque-message-id",
       "backlogRemaining": 0,
-      "complete": true
+      "complete": true,
+      "historyTruncated": false,
+      "droppedMessages": false,
+      "contentTruncated": false,
+      "contentRedacted": false
     }
   ]
 }
 ```
 
-只有 allowlist 中的 agent、direct chat 和用户可以进入回执。水位是调用方声明值，状态中会明确标记为 `declared`，不能描述成已证明的完整覆盖。
+回执至少包含一个 session。只有 key、agent、channel、direct scope、`createdActorId` 和用户 allowlist 全部一致的 session 可以进入回执。丢消息、eligible 内容截断或脱敏会被拒绝；不完整 backlog 可以提交观察，但不会推进水位。水位是调用方声明值，状态中会明确标记为 `declared`，不能描述成已证明的完整覆盖。
 
 ## Observation
 

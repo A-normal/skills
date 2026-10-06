@@ -30,6 +30,7 @@
     "allowedChatScopes": [
       "direct"
     ],
+    "allowedChannels": [],
     "allowedUserIds": []
   },
   "taxonomy": {

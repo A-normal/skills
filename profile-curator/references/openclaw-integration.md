@@ -14,10 +14,20 @@
 仅允许：
 
 - agent ID 在 `allowedAgents` 中，默认只有 `main`；
+- channel 在 `allowedChannels` 中；
 - chat scope 为 `direct`；
 - user ID 在安装后显式配置的 `allowedUserIds` 中。
 
 排除群聊、其他用户、cron、hook、subagent 和无法确定参与者的 session。禁止直接解析或写入 OpenClaw/Codex SQLite、WAL/SHM 或 canonical transcript 内部表。
+
+### 当前会话映射与分页
+
+- Telegram direct 在 `sessions_list` 中属于 `kind: other`，不得使用 `kinds:["main"]` 过滤。分页读取全部列表页并按 `agentId + key + sessionId` 去重。
+- 只接受同时满足 `key = agent:<agentId>:<channel>:direct:<userId>`、返回的 `channel` 命中 allowlist、`createdActor.type = human` 且 `createdActor.id = userId` 的会话。具体 channel 与 user ID 只写入安装后的 state 配置，不进入可分发 Skill 源码。
+- `sessions_history` 普通读取必须用 `offset`/`nextOffset` 逐页推进；`messageId` 仅用于精确锚定与核验，不能声称等价于“水位之后的完整增量”。
+- 每页记录 `truncated`、`droppedMessages`、`contentTruncated`、`contentRedacted`。`droppedMessages`、eligible user 内容截断或任何内容脱敏时失败关闭；不提交水位。
+- 有正常 backlog 时允许 `complete:false`，但水位保持 `previousWatermark`。只有所有页读完、`backlogRemaining=0` 且完整性标志干净时，才把 `observedThroughMessageId` 提升为新水位。
+- 列表或历史总量在分页期间变化时，停止本轮并从新快照重试；不要把 live offset 漂移解释成完整覆盖。
 
 ## 真实性边界
 

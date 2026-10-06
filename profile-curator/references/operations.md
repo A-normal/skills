@@ -6,7 +6,7 @@
 node scripts/profile-curator.mjs init
 ```
 
-初始化只创建状态文件，不读取会话、不注册调度、不修改人格文档。随后在状态目录的 `config.json` 中填写 `integration.allowedUserIds`；普通用户不需要指定 USER/SOUL 路径。
+初始化只创建状态文件，不读取会话、不注册调度、不修改人格文档。随后在状态目录的 `config.json` 中填写 `integration.allowedChannels` 与 `integration.allowedUserIds`；普通用户不需要指定 USER/SOUL 路径。
 
 v1 状态不能静默迁移：旧 observation 缺少 message ID、content hash、chat scope 与用户 allowlist 绑定。保留旧目录作审计，使用新的 v2 状态目录开始影子运行。旧 `apply-state.json`、`apply-pending.json` 和备份不会被删除。
 
@@ -30,9 +30,9 @@ node scripts/profile-curator.mjs commit-run \
   --run-id weekly-2026-10-05
 ```
 
-`collect` 验证 receipt 与 observation 的 session、agent、chat scope 和 user 一致，并从输入计算 observation ID。`evaluate` 把 config、observations 和 decisions 哈希写入 view。`render`、`commit-run` 会重新验证这些哈希；中途状态变化会使旧 view 失效。
+`collect` 验证 receipt 非空，检查 session key、agent、channel、chat scope、created actor 和 user 一致，并拒绝丢消息、eligible 内容截断或脱敏；随后从输入计算 observation ID。`evaluate` 把 config、observations 和 decisions 哈希写入 view。`render`、`commit-run` 会重新验证这些哈希；中途状态变化会使旧 view 失效。
 
-`commit-run` 不接受调用方提供的记录数或水位。它提交 `collect` 已记录的数量、backlog 和 per-session declared watermark。该水位只保证本地事务一致，不证明 OpenClaw 历史已完整枚举。
+`commit-run` 不接受调用方提供的记录数或水位，并拒绝 `sessionsScanned=0`。它提交 `collect` 已记录的数量、backlog 和 per-session declared watermark；不完整 session 保持旧水位，只有完整 session 才推进到 `observedThroughMessageId`。该水位只保证本地事务一致，不证明 OpenClaw 历史已完整枚举。
 
 ## 前台审核
 
@@ -74,7 +74,7 @@ node scripts/profile-curator.mjs recover-lock \
 ## 每周任务与日志
 
 - 每轮最多处理 `maxRecordsPerRun` 条 observation，首次最多回看配置天数和 session 数。
-- backlog 不为零时，下一轮从已声明水位继续；不得跳过未处理消息。
+- backlog 不为零时不推进水位；下一轮从原水位重读并依赖 observation 去重，直到完整覆盖。不得跳过未处理消息。
 - 无新提案时任务可以静默；有提案或失败时在 Gateway 运行结果中给出摘要和路径。
 - 投递渠道、后台模型和调度周期由外部 OpenClaw 配置决定。本 Skill 不写死 Telegram、DeepSeek 或其他服务。
 - 示例只是一份待导入配置，不会自行安装或启动进程。

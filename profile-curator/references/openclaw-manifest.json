@@ -10,6 +10,7 @@
   "chatScopeAllowlist": [
     "direct"
   ],
+  "channelAllowlistRequired": true,
   "userAllowlistRequired": true,
   "evidenceAccess": {
     "requiredTools": [

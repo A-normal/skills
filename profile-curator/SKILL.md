@@ -1,6 +1,6 @@
 ---
-name: profile-curator
-description: 定期整理 OpenClaw 中可追溯的用户偏好、Agent 做事方法和人格反思；用于从 allowlist 会话建立候选、检测冲突并生成审核提案。当前版本只观察、只提案，禁止自动修改 USER.md、AGENTS.md、SOUL.md 或任何 Skill。
+name: "profile-curator"
+description: "定期整理 OpenClaw 中可追溯的用户偏好、Agent 做事方法和人格反思；用于从 allowlist 会话建立候选、检测冲突并生成审核提案。当前版本只观察、只提案，禁止自动修改 USER.md、AGENTS.md、SOUL.md 或任何 Skill。"
 ---
 
 # Profile Curator
@@ -18,10 +18,10 @@ description: 定期整理 OpenClaw 中可追溯的用户偏好、Agent 做事方
 
 ## 单轮流程
 
-1. 确认 `config.json` 已显式设置 `integration.allowedUserIds`，且只有 `main`、`direct` 和指定用户。
+1. 确认 `config.json` 已显式设置 `integration.allowedChannels` 与 `integration.allowedUserIds`，且只有 `main`、`direct`、指定渠道和指定用户。
 2. 运行 `begin-run --run-id <id>`。同一状态目录同时只能有一轮。
-3. 使用 `sessions_list` 枚举 allowlist 会话，再用 `sessions_history` 从各 session 的最后成功水位读取有限增量。群聊、其他用户、cron、hook 和 subagent 一律排除。
-4. 生成脱敏 collection receipt 与 observation 临时文件。不要保存完整聊天正文。所有 envelope 必须标记 `trust: declared`。
+3. 使用 `sessions_list` 枚举 allowlist 会话，再用 `sessions_history` 从各 session 的最后成功水位读取有限增量。必须核对 session key、channel 与 `createdActor.id`；群聊、其他用户、cron、hook 和 subagent 一律排除。
+4. 生成脱敏 collection receipt 与 observation 临时文件。不要保存完整聊天正文。所有 envelope 必须标记 `trust: declared`；空 session、丢消息、eligible 内容截断或脱敏时停止，不生成可提交回执。
 5. 运行 `collect --run-id <id> --receipt <receipt.json> --input <observations.jsonl>`。ID、去重、allowlist、首次回看上限和水位一致性由脚本检查。
 6. 运行 `evaluate --run-id <id>`。模型不得手写候选状态、计数、content hash 或 proposal revision。
 7. 运行 `render --run-id <id>`。提案只引用脱敏内容，并明确标记不可信数据。
